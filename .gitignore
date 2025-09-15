@@ -1,0 +1,5 @@
+.idea/
+.claude/
+utf8_tokenizer.egg-info
+build
+.env

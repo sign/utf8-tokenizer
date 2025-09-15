@@ -1,0 +1,57 @@
+[project]
+name = "utf8-tokenizer"
+description = "True UTF-8 tokenizer for byte level models"
+version = "0.0.1"
+authors = [
+    { name = "Amit Moryossef", email = "amit@sign.mt" },
+]
+readme = "README.md"
+dependencies = [
+    "transformers[torch]",
+    "torch"
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pytest",
+    "pytest-xdist", # For parallel test execution
+]
+
+train = [
+    "datasets", # For dataset loading and processing
+    "evaluate", # For evaluation metrics
+    "scikit-learn", # For "accuracy" metric in evaluate
+    "wandb", # For experiment tracking
+]
+
+[tool.setuptools]
+packages = [
+    "utf8_tokenizer",
+]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = [
+    "experiments/*",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "C90", # mccabe complexity
+    "I", # isort
+    "N", # pep8-naming
+    "UP", # pyupgrade
+    "B", # flake8-bugbear
+    "PT", # flake8-pytest-style
+    "W605", # invalid escape sequence
+    "BLE", # flake8-blind-except
+    "TRY", # tryceratops
+]
+
+[tool.pytest.ini_options]
+addopts = "-v"
+testpaths = ["utf8_tokenizer", "tests"]
