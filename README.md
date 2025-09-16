@@ -22,7 +22,7 @@ tokenizer = UTF8Tokenizer()
 texts = ["word", "or multiple"]
 print(tokenizer(texts))
 
-# Faster version
+# Very fast version
 print(tokenizer.torch(texts))
 ```
 
@@ -48,7 +48,8 @@ join_embedding_layers(model) # Fold to a single embedding layer for inference
 ## Benchmark
 
 ### Tokenization Speed
-```bash
+
+```shell
 python experiments/benchmark.py
 ```
 

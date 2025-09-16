@@ -1,0 +1,50 @@
+name: Publish Python Package
+
+on:
+  release:
+    types: [ created ]
+
+jobs:
+  pypi-publish:
+    name: Upload release to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/utf8-tokenizer
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Extract release version
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Update version in pyproject.toml
+        run: |
+          sed -i 's/^version = .*/version = "${{ env.version }}"/' pyproject.toml
+
+      - name: Commit updated pyproject.toml
+        run: |
+          git fetch origin main
+          git checkout main
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add pyproject.toml
+          git commit -m "Bump version to ${{ env.version }}"
+          git push origin main
+
+      - name: Install build dependencies
+        run: pip install build
+
+      - name: Build a binary wheel dist
+        run: |
+          rm -rf dist
+          python -m build
+
+      - name: Publish distribution 📦 to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

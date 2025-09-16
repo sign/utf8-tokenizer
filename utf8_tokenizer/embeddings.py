@@ -5,8 +5,12 @@ from torch.nn import Embedding
 
 def unpack_bits(x: torch.Tensor) -> torch.Tensor:
     assert x.dtype == torch.uint8, "Expected bytes tensor input (torch.uint8)"
+
+    # Create shifts by [7, 6, 5, 4, 3, 2, 1, 0]
     shifts = torch.arange(7, -1, -1, device=x.device, dtype=torch.uint8)
+    # Shift the integers (tensor is still integers)
     shifted = x.unsqueeze(-1) >> shifts  # (B, L, 8)
+    # Masks off all but the least significant bit
     return shifted & 1
 
 
