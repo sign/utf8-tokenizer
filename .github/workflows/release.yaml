@@ -1,4 +1,6 @@
 name: Publish Python Package
+permissions:
+  contents: write
 
 on:
   release:
@@ -30,13 +32,10 @@ jobs:
 
       - name: Commit updated pyproject.toml
         run: |
-          git fetch origin main
-          git checkout main
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add pyproject.toml
-          git commit -m "Bump version to ${{ env.version }}"
-          git push origin main
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git commit -am "Automated report"
+          git push
 
       - name: Install build dependencies
         run: pip install build
