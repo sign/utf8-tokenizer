@@ -12,6 +12,10 @@ Instead, we rely on C0 Control characters (0-31) as special tokens, which are no
 
 ## Usage
 
+```shell
+pip install utf8-tokenizer
+```
+
 Tokenization:
 
 ```python
