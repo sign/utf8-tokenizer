@@ -15,12 +15,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
 
-      - name: Install Requirements
-        run: pip install ".[dev]"
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6.5.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          activate-environment: true
+
+      - name: Install dependencies
+        run: uv pip install ".[dev]"
 
       - name: Test Code
-        run: pytest -n auto --dist loadscope
+        run: uv run pytest -n auto --dist loadscope
