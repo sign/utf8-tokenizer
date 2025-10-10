@@ -20,7 +20,7 @@ pip install ".[train]"
 
 # Login to Weights & Biases
 wandb login
-export WANDB_PROJECT=clm-bit-embeddings
+export WANDB_PROJECT="clm-bit-embeddings"
 ```
 
 ## Training
@@ -48,9 +48,11 @@ With the following shared arguments:
     --do_train True \
     --do_eval True \
     --eval_strategy epoch \
-    --logging_steps 10 \
+    --save_strategy epoch \
+    --save_total_limit 1 \
+    --logging_steps 100 \
     --logging_strategy steps \
-    --max_steps 10000 \
+    --num_train_epochs 1 \
     --model_name_or_path sbintuitions/tiny-lm \
     --per_device_train_batch_size 8 \
     --per_device_eval_batch_size 8 \
@@ -58,5 +60,11 @@ With the following shared arguments:
     --optim adamw_torch_fused \
     --bf16 True \
     --seed 42 \
-    --report_to wandb
+    --report_to wandb \
+    --include_num_input_tokens_seen True
+```
+
+If you want to use a different tokenizer, you can specify it with:
+```shell
+    --tokenizer_name "google/byt5-small"
 ```

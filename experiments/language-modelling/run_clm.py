@@ -59,13 +59,14 @@ from transformers import (
     TrainingArguments,
     default_data_collator,
     is_torch_xla_available,
-    set_seed,
+    set_seed, AutoTokenizer,
 )
 from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import send_example_telemetry
 from transformers.utils.versions import require_version
 
+from utf8_tokenizer.byt5_comparison import ByT5ComparableTokenizer
 from utf8_tokenizer.embeddings import patch_embedding_layers
 from utf8_tokenizer.tokenizer import UTF8Tokenizer
 
@@ -75,7 +76,6 @@ from utf8_tokenizer.tokenizer import UTF8Tokenizer
 require_version("datasets>=2.14.0", "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt")
 
 logger = logging.getLogger(__name__)
-
 
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
@@ -246,8 +246,8 @@ class DataTrainingArguments:
 
 
 def split_streaming_dataset(
-    full_streaming_dataset,
-    validation_percentage: int = 5,
+        full_streaming_dataset,
+        validation_percentage: int = 5,
 ) -> IterableDatasetDict:
     """
     Splits a streaming dataset into
@@ -474,23 +474,28 @@ def main():
             config.update_from_string(model_args.config_overrides)
             logger.info(f"New config: {config}")
 
-    # tokenizer_kwargs = {
-    #     "cache_dir": model_args.cache_dir,
-    #     "use_fast": model_args.use_fast_tokenizer,
-    #     "revision": model_args.model_revision,
-    #     "token": model_args.token,
-    #     "trust_remote_code": model_args.trust_remote_code,
-    # }
-    # if model_args.tokenizer_name:
-    #     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
-    # elif model_args.model_name_or_path:
-    #     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, **tokenizer_kwargs)
-    # else:
-    #     raise ValueError(
-    #         "You are instantiating a new tokenizer from scratch. This is not supported by this script. "
-    #         "You can do it from another script, save it, and load it from here, using --tokenizer_name."
-    #     )
-    tokenizer = UTF8Tokenizer()
+    if model_args.tokenizer_name:
+        if model_args.tokenizer_name.startswith("google/byt5"):
+            tokenizer = ByT5ComparableTokenizer()
+        else:
+            tokenizer_kwargs = {
+                "cache_dir": model_args.cache_dir,
+                "use_fast": model_args.use_fast_tokenizer,
+                "revision": model_args.model_revision,
+                "token": model_args.token,
+                "trust_remote_code": model_args.trust_remote_code,
+            }
+            if model_args.tokenizer_name:
+                tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
+            elif model_args.model_name_or_path:
+                tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, **tokenizer_kwargs)
+            else:
+                raise ValueError(
+                    "You are instantiating a new tokenizer from scratch. This is not supported by this script. "
+                    "You can do it from another script, save it, and load it from here, using --tokenizer_name."
+                )
+    else:
+        tokenizer = UTF8Tokenizer()
 
     if model_args.model_name_or_path:
         dtype = model_args.dtype if model_args.dtype in ["auto", None] else getattr(torch, model_args.dtype)
@@ -507,7 +512,7 @@ def main():
     else:
         model = AutoModelForCausalLM.from_config(config, trust_remote_code=model_args.trust_remote_code)
         n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
-        logger.info(f"Training new model from scratch - Total size={n_params / 2**20:.2f}M params")
+        logger.info(f"Training new model from scratch - Total size={n_params / 2 ** 20:.2f}M params")
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
@@ -591,7 +596,7 @@ def main():
         total_length = (total_length // block_size) * block_size
         # Split by chunks of max_len.
         result = {
-            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+            k: [t[i: i + block_size] for i in range(0, total_length, block_size)]
             for k, t in concatenated_examples.items()
         }
         result["labels"] = result["input_ids"].copy()
