@@ -14,7 +14,7 @@ def tokenizer():
 def test_basic_tokenization(tokenizer):
     """Test basic tokenization without special tokens."""
     text = "hello"
-    result = tokenizer(text, add_special_tokens=False)
+    result = tokenizer._original_call(text, add_special_tokens=False)
 
     # Expected: [104, 101, 108, 108, 111] (UTF-8 bytes for "hello")
     expected_ids = [104, 101, 108, 108, 111]
@@ -25,7 +25,7 @@ def test_basic_tokenization(tokenizer):
 def test_unicode_string(tokenizer):
     """Test tokenization of a unicode string."""
     text = "héllo עמית"
-    result = tokenizer(text, add_special_tokens=False)
+    result = tokenizer._original_call(text, add_special_tokens=False)
 
     decoded = tokenizer.decode(result.input_ids)
     assert decoded == text
@@ -34,7 +34,7 @@ def test_unicode_string(tokenizer):
 def test_tokenization_with_special_tokens(tokenizer):
     """Test tokenization with BOS and EOS tokens."""
     text = "hello"
-    result = tokenizer(text, add_special_tokens=True)
+    result = tokenizer._original_call(text, add_special_tokens=True)
 
     # Expected: [2, 104, 101, 108, 108, 111, 3] (BOS + "hello" + EOS)
     expected_ids = [2, 104, 101, 108, 108, 111, 3]
@@ -129,10 +129,10 @@ def test_torch_method_special_tokens_with_padding(tokenizer):
 
 @pytest.mark.parametrize("add_special_tokens", [True, False])
 def test_comparison_tokenizer_vs_torch_method(add_special_tokens, tokenizer):
-    """Test that tokenizer() and torch() methods produce compatible results."""
+    """Test that tokenizer._original_call() and torch() methods produce compatible results."""
     texts = ["test string"]
 
-    result1 = tokenizer(texts, add_special_tokens=add_special_tokens, return_tensors="pt")
+    result1 = tokenizer._original_call(texts, add_special_tokens=add_special_tokens, return_tensors="pt")
     result2 = tokenizer.torch(texts, add_special_tokens=add_special_tokens, padding=False)
 
     assert torch.equal(result1.input_ids[0], result2.input_ids[0])
@@ -148,7 +148,7 @@ def test_comparison_tokenizer_vs_torch_method_max_length(add_special_tokens, tok
         max_length=1,
         truncation=True
     )
-    result1 = tokenizer(texts, return_tensors="pt", **params)
+    result1 = tokenizer._original_call(texts, return_tensors="pt", **params)
     result2 = tokenizer.torch(texts, **params)
 
     assert torch.equal(result1.input_ids[0], result2.input_ids[0])
@@ -158,7 +158,7 @@ def test_comparison_tokenizer_vs_torch_method_max_length(add_special_tokens, tok
 def test_comparison_tokenizer_vs_torch_method_multiple_strings(tokenizer):
     texts = ["test string", "shorter"]
 
-    result1 = tokenizer(texts, padding=True, return_tensors="pt")
+    result1 = tokenizer._original_call(texts, padding=True, return_tensors="pt")
     result2 = tokenizer.torch(texts, padding=True)
 
     assert torch.equal(result1.input_ids[0], result2.input_ids[0])
@@ -167,11 +167,11 @@ def test_comparison_tokenizer_vs_torch_method_multiple_strings(tokenizer):
 
 def test_empty_string(tokenizer):
     """Test tokenization of empty string."""
-    result = tokenizer("", add_special_tokens=False)
+    result = tokenizer._original_call("", add_special_tokens=False)
     assert result.input_ids == []
     assert result.attention_mask == []
 
-    result_with_special = tokenizer("", add_special_tokens=True)
+    result_with_special = tokenizer._original_call("", add_special_tokens=True)
     assert result_with_special.input_ids == [2, 3]  # BOS + EOS
     assert result_with_special.attention_mask == [1, 1]
 
@@ -179,7 +179,7 @@ def test_empty_string(tokenizer):
 def test_special_characters(tokenizer):
     """Test tokenization with special characters and unicode."""
     text = "hello\nworld\t!"
-    result = tokenizer(text, add_special_tokens=False)
+    result = tokenizer._original_call(text, add_special_tokens=False)
 
     expected_ids = [ord(c) for c in text]
     assert result.input_ids == expected_ids

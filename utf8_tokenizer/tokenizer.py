@@ -5,7 +5,7 @@ from typing import Optional, Union
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from transformers import AutoTokenizer, PreTrainedTokenizer
-from transformers.tokenization_utils_base import TextInput
+from transformers.tokenization_utils_base import BatchEncoding, TextInput
 
 from utf8_tokenizer.control import ControlTokens
 
@@ -87,13 +87,23 @@ class UTF8Tokenizer(PreTrainedTokenizer):
         token_ids_0.insert(0, BOS_TOKEN_ID)  # BOS
         return token_ids_0
 
+    def _original_call(self, *args, **kwargs) -> BatchEncoding:
+        return super().__call__(*args, **kwargs)
+
+    def __call__(self, *args, **kwargs) -> BatchEncoding:
+        return_tensors = kwargs.pop("return_tensors", "pt")
+        if return_tensors != "pt":
+            return self._original_call(*args,  return_tensors=return_tensors, **kwargs)
+        result = self.torch(*args, **kwargs)
+        return result._asdict()
+
     def torch(self,
               texts: list[TextInput],
               add_special_tokens: bool = True,
               padding: bool = False,
               truncation: bool = False,
               max_length: Optional[int] = None,
-              device: Optional[torch.device] = None):
+              device: Optional[torch.device] = None) -> TokenizerResult:
 
         input_bytes = [bytearray(text, "utf-8") for text in texts]
 

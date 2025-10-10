@@ -25,9 +25,6 @@ tokenizer = UTF8Tokenizer()
 
 texts = ["word", "or multiple"]
 print(tokenizer(texts))
-
-# Very fast version
-print(tokenizer.torch(texts))
 ```
 
 Bit-biased byte embeddings:
