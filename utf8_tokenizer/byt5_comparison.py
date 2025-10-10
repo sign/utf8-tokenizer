@@ -19,7 +19,7 @@ class ByT5ComparableTokenizer(ByT5Tokenizer):
             warnings.warn(
                 f"This sequence already has {self.bos_token_id}. In future versions this behavior may lead to "
                 f"duplicated bos tokens being added.",
-                stacklevel=2
+                stacklevel=2,
             )
             return token_ids
 

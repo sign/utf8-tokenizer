@@ -1,6 +1,5 @@
 import warnings
 from collections import namedtuple
-from typing import Optional, Union
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -11,7 +10,7 @@ from utf8_tokenizer.control import ControlTokens
 
 
 def tokenize_ids(text: str, errors="strict"):
-    return list(text.encode('utf-8', errors=errors))
+    return list(text.encode("utf-8", errors=errors))
 
 
 TokenizerResult = namedtuple("TokenizerResult", ["input_ids", "attention_mask"])
@@ -49,7 +48,7 @@ class UTF8Tokenizer(PreTrainedTokenizer):
 
     @property
     def vocab_size(self) -> int:
-        return 2 ** 8
+        return 2**8
 
     def add_tokens(self, *args, **kwargs):
         raise NotImplementedError("UTF8Tokenizer does not support adding tokens")
@@ -77,9 +76,9 @@ class UTF8Tokenizer(PreTrainedTokenizer):
         _bytes = bytes(ord(token) for token in tokens)
         return _bytes.decode("utf-8", errors="ignore")
 
-    def build_inputs_with_special_tokens(self,
-                                         token_ids_0: Union[list[int], bytearray],
-                                         token_ids_1: Optional[list[int]] = None) -> Union[list[int], bytearray]:
+    def build_inputs_with_special_tokens(
+        self, token_ids_0: list[int] | bytearray, token_ids_1: list[int] | None = None
+    ) -> list[int] | bytearray:
         assert token_ids_1 is None, "UTF8Tokenizer only supports single sequence"
 
         # Experimentally, the fastest way to add BOS/EOS
@@ -93,18 +92,19 @@ class UTF8Tokenizer(PreTrainedTokenizer):
     def __call__(self, *args, **kwargs) -> BatchEncoding:
         return_tensors = kwargs.pop("return_tensors", "pt")
         if return_tensors != "pt":
-            return self._original_call(*args,  return_tensors=return_tensors, **kwargs)
+            return self._original_call(*args, return_tensors=return_tensors, **kwargs)
         result = self.torch(*args, **kwargs)
         return result._asdict()
 
-    def torch(self,
-              texts: list[TextInput],
-              add_special_tokens: bool = True,
-              padding: bool = False,
-              truncation: bool = False,
-              max_length: Optional[int] = None,
-              device: Optional[torch.device] = None) -> TokenizerResult:
-
+    def torch(
+        self,
+        texts: list[TextInput],
+        add_special_tokens: bool = True,
+        padding: bool = False,
+        truncation: bool = False,
+        max_length: int | None = None,
+        device: torch.device | None = None,
+    ) -> TokenizerResult:
         input_bytes = [bytearray(text, "utf-8") for text in texts]
 
         if truncation:
@@ -112,13 +112,12 @@ class UTF8Tokenizer(PreTrainedTokenizer):
                 warnings.warn(
                     "Asking to truncate to max_length but no maximum length is provided and the model has "
                     "no predefined maximum length. Default to no truncation.",
-                    stacklevel=2)
+                    stacklevel=2,
+                )
             else:
                 corrected_max_length = max_length - 2 if add_special_tokens else max_length
                 if corrected_max_length < 0:
-                    warnings.warn(
-                        "We need to remove more tokens than exist. Default to no truncation.",
-                        stacklevel=2)
+                    warnings.warn("We need to remove more tokens than exist. Default to no truncation.", stacklevel=2)
                 else:
                     input_bytes = [text_bytes[:corrected_max_length] for text_bytes in input_bytes]
 
@@ -146,7 +145,7 @@ class UTF8Tokenizer(PreTrainedTokenizer):
 
         return TokenizerResult(input_ids=input_ids, attention_mask=attention_mask)
 
-    def save_vocabulary(self, save_directory: str, filename_prefix: Optional[str] = None):
+    def save_vocabulary(self, save_directory: str, filename_prefix: str | None = None):
         return ()
 
 

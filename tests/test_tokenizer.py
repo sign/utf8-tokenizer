@@ -122,7 +122,7 @@ def test_torch_method_special_tokens_with_padding(tokenizer):
     assert result.attention_mask.shape == (2, max_len)
 
     # Check first sequence: BOS + "hi" + EOS + padding
-    expected_first = [2, ord('h'), ord('i'), 3, 0, 0, 0]
+    expected_first = [2, ord("h"), ord("i"), 3, 0, 0, 0]
     assert result.input_ids[0].tolist() == expected_first
     assert result.attention_mask[0].tolist() == [1, 1, 1, 1, 0, 0, 0]
 
@@ -143,11 +143,7 @@ def test_comparison_tokenizer_vs_torch_method(add_special_tokens, tokenizer):
 def test_comparison_tokenizer_vs_torch_method_max_length(add_special_tokens, tokenizer):
     texts = ["test string"]
 
-    params = dict(
-        add_special_tokens=add_special_tokens,
-        max_length=1,
-        truncation=True
-    )
+    params = dict(add_special_tokens=add_special_tokens, max_length=1, truncation=True)
     result1 = tokenizer._original_call(texts, return_tensors="pt", **params)
     result2 = tokenizer.torch(texts, **params)
 
@@ -210,7 +206,7 @@ def test_batch_consistency(tokenizer):
 
     # Check that unpadded portions match
     for i, individual_ids in enumerate(individual_results):
-        batch_ids = batch_result.input_ids[i][:len(individual_ids)]
+        batch_ids = batch_result.input_ids[i][: len(individual_ids)]
         assert batch_ids.tolist() == individual_ids.tolist()
 
 

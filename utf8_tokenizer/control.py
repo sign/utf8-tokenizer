@@ -12,12 +12,12 @@ class ControlTokens:
     Alert = "\x07"
     Backspace = "\x08"
     HorizontalTab = "\x09"  # Whitespace
-    LineFeed = "\x0A"  # Whitespace
-    VerticalTab = "\x0B"  # Whitespace
-    FormFeed = "\x0C"  # Whitespace
-    CarriageReturn = "\x0D"  # Whitespace
-    ShiftOut = "\x0E"
-    ShiftIn = "\x0F"
+    LineFeed = "\x0a"  # Whitespace
+    VerticalTab = "\x0b"  # Whitespace
+    FormFeed = "\x0c"  # Whitespace
+    CarriageReturn = "\x0d"  # Whitespace
+    ShiftOut = "\x0e"
+    ShiftIn = "\x0f"
     DataLinkEscape = "\x10"
     DeviceControl1 = "\x11"
     DeviceControl2 = "\x12"
@@ -28,17 +28,17 @@ class ControlTokens:
     EndOfTransmissionBlock = "\x17"
     Cancel = "\x18"
     EndOfMedium = "\x19"
-    Substitute = "\x1A"
-    Escape = "\x1B"
-    FileSeparator = "\x1C"
-    GroupSeparator = "\x1D"
-    RecordSeparator = "\x1E"
-    UnitSeparator = "\x1F"
+    Substitute = "\x1a"
+    Escape = "\x1b"
+    FileSeparator = "\x1c"
+    GroupSeparator = "\x1d"
+    RecordSeparator = "\x1e"
+    UnitSeparator = "\x1f"
     Space = "\x20"  # Whitespace
-    Delete = "\x7F"
+    Delete = "\x7f"
 
 
-CONTROl_TOKENS_PATTERN = "\x01-\x08\x0E-\x1F\x7F"
+CONTROl_TOKENS_PATTERN = "\x01-\x08\x0e-\x1f\x7f"
 
 CONTROL_WHITESPACES = {
     ControlTokens.HorizontalTab,
@@ -65,4 +65,4 @@ def visualize_control_tokens(text: str, include_whitespace=False) -> str:
             return chr(0x2421)
         return char
 
-    return re.sub(r'[\x00-\x1F\x7F]', control_char_to_symbol, text)
+    return re.sub(r"[\x00-\x1F\x7F]", control_char_to_symbol, text)

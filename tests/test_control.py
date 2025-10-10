@@ -30,6 +30,7 @@ First I'll think about it.
 ␀␀␀␀
 """.strip()
 
+
 def test_control_visualization():
     result = visualize_control_tokens(message)
     print("result", result)

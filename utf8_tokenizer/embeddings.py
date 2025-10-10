@@ -96,10 +96,10 @@ class PatchedBitEmbeddings(nn.Module):
         w = self.embeddings.weight
         bw = self.bit_proj_w
         return (
-                w._version != self._last_base_v
-                or bw._version != self._last_bit_v
-                or w.device is not self._last_device
-                or w.dtype != self._last_dtype
+            w._version != self._last_base_v
+            or bw._version != self._last_bit_v
+            or w.device is not self._last_device
+            or w.dtype != self._last_dtype
         )
 
     def _mark_refreshed(self):

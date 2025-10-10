@@ -20,12 +20,12 @@ class TestEmbeddings:
 
     @pytest.fixture
     def sample_input(self):
-        B, L = 2, 16 # noqa: N806
+        B, L = 2, 16  # noqa: N806
         return torch.randint(0, 256, (B, L), dtype=torch.uint8)
 
     @pytest.fixture
     def attention_mask(self):
-        B, L = 2, 16 # noqa: N806
+        B, L = 2, 16  # noqa: N806
         return torch.ones(B, L, dtype=torch.long)
 
     def test_unpack_bits(self):
@@ -54,7 +54,7 @@ class TestEmbeddings:
         with torch.inference_mode():
             output = model(input_ids=sample_input, attention_mask=attention_mask)
 
-        assert hasattr(output, 'logits')
+        assert hasattr(output, "logits")
         assert output.logits.shape == (2, 16, 256)
 
     def test_parameter_count_preservation(self, model):
@@ -105,9 +105,9 @@ class TestEmbeddings:
         patch_embedding_layers(model)
         patched_embeddings = model.get_input_embeddings()
 
-        assert hasattr(patched_embeddings, 'weight')
-        assert hasattr(patched_embeddings, 'embeddings')
-        assert hasattr(patched_embeddings, 'bit_proj_w')
+        assert hasattr(patched_embeddings, "weight")
+        assert hasattr(patched_embeddings, "embeddings")
+        assert hasattr(patched_embeddings, "bit_proj_w")
 
         weight = patched_embeddings.weight
         assert weight.shape == (256, patched_embeddings.embeddings.embedding_dim)
