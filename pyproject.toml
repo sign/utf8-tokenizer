@@ -24,6 +24,7 @@ train = [
     "evaluate", # For evaluation metrics
     "scikit-learn", # For "accuracy" metric in evaluate
     "wandb", # For experiment tracking
+    "transformers[torch]==4.56.2", # pinned version
 ]
 
 [tool.setuptools]
