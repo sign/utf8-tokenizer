@@ -27,6 +27,25 @@ texts = ["word", "or multiple"]
 print(tokenizer(texts))
 ```
 
+Chat Template:
+
+```py
+from utf8_tokenizer.tokenizer import UTF8Tokenizer
+from utf8_tokenizer.control import visualize_control_tokens
+
+messages = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hey, what's 1+1?"},
+    {"role": "assistant", "content": "1+1 is 2."},
+]
+
+tokenizer = UTF8Tokenizer()
+text = tokenizer.apply_chat_template(messages, tokenize=False)
+
+# Visualize the text with special tokens
+print(visualize_control_tokens(text))
+```
+
 Bit-biased byte embeddings:
 ```py
 from transformers import AutoModelForCausalLM

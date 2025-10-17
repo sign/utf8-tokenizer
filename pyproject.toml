@@ -31,6 +31,9 @@ packages = [
     "utf8_tokenizer",
 ]
 
+[tool.setuptools.package-data]
+utf8_tokenizer = ["*.jinja"]
+
 [tool.ruff]
 line-length = 120
 extend-exclude = [

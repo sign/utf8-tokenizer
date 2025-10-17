@@ -1,5 +1,6 @@
 import warnings
 from collections import namedtuple
+from pathlib import Path
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -46,9 +47,15 @@ class UTF8Tokenizer(PreTrainedTokenizer):
         kwargs["eos_token_id"] = EOS_TOKEN_ID
         super().__init__(**kwargs)
 
+        # Chat template for instruction-following models
+        with open(Path(__file__).parent / "chat_template.jinja") as f:
+            self.chat_template = ""
+            for line in f:
+                self.chat_template += line.strip()
+
     @property
     def vocab_size(self) -> int:
-        return 2**8
+        return 2 ** 8
 
     def add_tokens(self, *args, **kwargs):
         raise NotImplementedError("UTF8Tokenizer does not support adding tokens")
@@ -77,7 +84,7 @@ class UTF8Tokenizer(PreTrainedTokenizer):
         return _bytes.decode("utf-8", errors="ignore")
 
     def build_inputs_with_special_tokens(
-        self, token_ids_0: list[int] | bytearray, token_ids_1: list[int] | None = None
+            self, token_ids_0: list[int] | bytearray, token_ids_1: list[int] | None = None
     ) -> list[int] | bytearray:
         assert token_ids_1 is None, "UTF8Tokenizer only supports single sequence"
 
@@ -97,13 +104,13 @@ class UTF8Tokenizer(PreTrainedTokenizer):
         return result._asdict()
 
     def torch(
-        self,
-        texts: list[TextInput],
-        add_special_tokens: bool = True,
-        padding: bool = False,
-        truncation: bool = False,
-        max_length: int | None = None,
-        device: torch.device | None = None,
+            self,
+            texts: list[TextInput],
+            add_special_tokens: bool = True,
+            padding: bool = False,
+            truncation: bool = False,
+            max_length: int | None = None,
+            device: torch.device | None = None,
     ) -> TokenizerResult:
         input_bytes = [bytearray(text, "utf-8") for text in texts]
 

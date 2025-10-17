@@ -1,0 +1,60 @@
+{# -------------------------------
+   Optional: Define available tools
+   ------------------------------- #}
+{%- if tools %}
+    {%- for tool in tools %}
+        {{- "\x11" -}} {# Start Of Tool Definition #}
+        {{- "\x0E" -}} {# Start Of Attention Block #}
+        {{- tool['function']['name'] + '\n' -}}
+        {# Loop through all argument names and their descriptions #}
+        {%- for argument in tool['function']['parameters']['properties'] %}
+            {{- argument + ': ' + tool['function']['parameters']['properties'][argument]['description'] + '\n' -}}
+        {%- endfor %}
+        {{- '\x0F' -}} {# End Of Attention Block #}
+    {%- endfor %}
+{%- endif %}
+
+{# -------------------------------
+   Main conversation message loop
+   ------------------------------- #}
+{% for message in messages %}
+    {{- "\x01" -}} {# Start Of Text Block #}
+
+    {# Print the role tag, e.g. user or assistant #}
+    {{- message.role + "\n" -}}
+
+    {# If not the "assistant", we wrap with an attention block #}
+    {% if message.role != "assistant" %}
+        {{- "\x0E" -}}
+    {% endif %}
+
+    {# If the message contains normal content, print it #}
+    {% if message.content %}
+        {{- message.content -}}
+    {% endif %}
+
+    {# If the assistant called any tools, print those tool calls #}
+    {% if message.tool_calls %}
+        {% for call in message.tool_calls %}
+            {{- "\x1A" -}} {# Start Of Tool Call #}
+            {{- call.type + " " + call.function.name
+               + "(" + call.function.arguments | tojson + ")" -}}
+            {{- "\x1B" -}} {# End Of Tool Call #}
+        {% endfor %}
+    {% endif %}
+
+    {# If not the "assistant", we wrap with an attention block #}
+    {% if message.role != "assistant" %}
+        {{- "\x0F" -}}
+    {% endif %}
+
+    {{- "\x17" -}} {# End Of Text Block #}
+    {{- "\n" -}} {# Newline after each message #}
+{% endfor %}
+
+{# -------------------------------
+   Add a final assistant prompt marker to continue generation
+   ------------------------------- #}
+{%- if add_generation_prompt %}
+    {{- "\x01assistant\n" -}}
+{%- endif %}
