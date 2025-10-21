@@ -1,6 +1,10 @@
 # Back to Bytes: Revisiting Tokenization Through `UTF-8`
 
-Full writeup can be found in the paper.
+![Python](https://img.shields.io/badge/python-3.10-blue)
+[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+[![arXiv](https://img.shields.io/badge/arXiv-2510.16987-b31b1b.svg)](https://arxiv.org/abs/2510.16987)
+
+Full writeup can be found in our paper.
 
 This module includes a **real** byte level tokenizer for text, which encodes text into a sequence of bytes (0-255).
 Unlike `ByT5Tokenizer` for example, `UTF8Tokenizer` is implemented from scratch, and is much more efficient.
@@ -47,6 +51,7 @@ print(visualize_control_tokens(text))
 ```
 
 Bit-biased byte embeddings:
+
 ```py
 from transformers import AutoModelForCausalLM
 
@@ -73,13 +78,13 @@ join_embedding_layers(model) # Fold to a single embedding layer for inference
 python experiments/benchmark.py
 ```
 
-On MacBook Pro, with Apple M4 Pro chip, just converting texts of 6 words in different languages to bytes, 
+On MacBook Pro, with Apple M4 Pro chip, just converting texts of 6 words in different languages to bytes,
 without wrapping them in tensors, creating attention masks, or padding, runs at 127.4k/sec.
 
 Calling the ByT5 tokenizer runs at 6.2k/sec.
 When we call our new tokenizer, through the `__call__` path, we get 10.5k/sec, which is a bit faster.
 
-Our optimized version with zero-copy runs at 86.7k/sec, where the loss of performance compared to the raw ints is 
+Our optimized version with zero-copy runs at 86.7k/sec, where the loss of performance compared to the raw ints is
 in padding the input ids into a properly padded tensor. **This is a 14x speedup over the original tokenizer.**
 
 ### Bit-Biased Byte Embedding
@@ -95,9 +100,13 @@ If you use this code in your research, please consider citing the work:
 
 ```bibtex
 @misc{moryossef2025utf8,
-  title={Back to Bytes: Revisiting Tokenization Through {UTF-8}},
-  author={Moryossef, Amit},
-  howpublished={\url{https://github.com/sign/utf8-tokenizer}},
-  year={2025}
+  title         = {Back to Bytes: Revisiting Tokenization Through {UTF-8}},
+  author        = {Amit Moryossef and Clara Meister and Pavel Stepachev and Desmond Elliott},
+  howpublished  = {\url{https://github.com/sign/utf8-tokenizer}},
+  eprint        = {2510.16987},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CL},
+  url           = {https://arxiv.org/abs/2510.16987}, 
+  year          = {2025}
 }
 ```
