@@ -155,5 +155,8 @@ class UTF8Tokenizer(PreTrainedTokenizer):
     def save_vocabulary(self, save_directory: str, filename_prefix: str | None = None):
         return ()
 
+    def to_dict(self):
+        return {}
+
 
 AutoTokenizer.register(UTF8Tokenizer, slow_tokenizer_class=UTF8Tokenizer)
