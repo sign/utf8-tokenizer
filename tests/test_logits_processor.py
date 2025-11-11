@@ -420,10 +420,7 @@ class TestWithActualModel:
         This test loads a small language model, resizes it to 256 tokens, and verifies that
         after generating with specific UTF-8 prefixes, the next byte falls within the expected range.
         """
-        try:
-            from transformers import AutoModelForCausalLM
-        except ImportError:
-            pytest.skip("transformers not available")
+        from transformers import AutoModelForCausalLM
 
         # Load the model
         model = AutoModelForCausalLM.from_pretrained("sbintuitions/tiny-lm", torch_dtype="auto")
