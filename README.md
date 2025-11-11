@@ -98,7 +98,7 @@ generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
 print(generated_text)
 ```
 
-The `UTF8ValidationLogitsProcessor` prevents byte-level tokenizers from generating malformed UTF-8 sequences by masking invalid byte continuations during generation. This addresses the issue discussed in [COLM 2024](https://openreview.net/pdf?id=8ExXncFpf6) where byte-level tokenizers can generate ill-formed UTF-8.
+The `UTF8ValidationLogitsProcessor` prevents byte-level tokenizers from generating malformed UTF-8 sequences by masking invalid byte continuations during generation. This addresses the issue discussed in [Firestone et al. 2024](https://openreview.net/pdf?id=8ExXncFpf6) where byte-level tokenizers can generate ill-formed UTF-8.
 
 ## Benchmark
 
