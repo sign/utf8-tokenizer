@@ -4,3 +4,5 @@ utf8_tokenizer.egg-info
 build/
 dist/
 .env
+__pycache__/
+*.pyc
