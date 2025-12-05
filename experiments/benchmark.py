@@ -22,21 +22,21 @@ if __name__ == "__main__":
         "emoji🤗",
     ]
 
-    num = 1000
+    num = 100000
 
     for _ in tqdm(range(num), desc="just tokenizing to ints"):
         for text in texts:
             tokenize_ids(text)
 
-    for _ in tqdm(range(num), desc="Calling the new tokenizer"):
-        tokenizer(texts, add_special_tokens=True, padding=True, return_tensors="pt")
-
     for _ in tqdm(range(num), desc="Calling the new tokenizer.torch"):
         tokenizer.torch(texts, add_special_tokens=True, padding=True)
 
-    for _ in tqdm(range(num), desc="Calling the new tokenizer._original_call"):
-        tokenizer._original_call(texts, add_special_tokens=True, padding=True, return_tensors="pt")
-
-    tokenizer = ByT5ComparableTokenizer()
-    for _ in tqdm(range(num), "Calling the old tokenizer"):
-        tokenizer(texts, add_special_tokens=True, padding=True, return_tensors="pt")
+    # for _ in tqdm(range(num), desc="Calling the new tokenizer"):
+    #     tokenizer(texts, add_special_tokens=True, padding=True, return_tensors="pt")
+    #
+    # for _ in tqdm(range(num), desc="Calling the new tokenizer._original_call"):
+    #     tokenizer._original_call(texts, add_special_tokens=True, padding=True, return_tensors="pt")
+    #
+    # tokenizer = ByT5ComparableTokenizer()
+    # for _ in tqdm(range(num), "Calling the old tokenizer"):
+    #     tokenizer(texts, add_special_tokens=True, padding=True, return_tensors="pt")
