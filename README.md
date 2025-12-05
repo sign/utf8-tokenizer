@@ -70,6 +70,36 @@ patch_embedding_layers(model) # Apply bit-bias for training
 join_embedding_layers(model) # Fold to a single embedding layer for inference
 ```
 
+UTF-8 Validation during Generation:
+
+```py
+from transformers import AutoModelForCausalLM
+from utf8_tokenizer import UTF8Tokenizer, UTF8ValidationLogitsProcessor
+
+# Load your byte-level model
+model = AutoModelForCausalLM.from_pretrained("your-model")
+tokenizer = UTF8Tokenizer()
+
+# Create the UTF-8 validation processor
+utf8_processor = UTF8ValidationLogitsProcessor()
+
+# Generate text with UTF-8 validation
+input_text = "Hello"
+input_ids = tokenizer(input_text, return_tensors="pt").input_ids
+
+outputs = model.generate(
+    input_ids,
+    logits_processor=[utf8_processor],  # Ensures valid UTF-8 sequences
+    max_new_tokens=100
+)
+
+# Decode the output
+generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+print(generated_text)
+```
+
+The `UTF8ValidationLogitsProcessor` prevents byte-level tokenizers from generating malformed UTF-8 sequences by masking invalid byte continuations during generation. This addresses the issue discussed in [Firestone et al. 2024](https://openreview.net/pdf?id=8ExXncFpf6) where byte-level tokenizers can generate ill-formed UTF-8.
+
 ## Benchmark
 
 ### Tokenization Speed
