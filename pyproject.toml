@@ -19,6 +19,10 @@ dev = [
     "pytest-xdist", # For parallel test execution
 ]
 
+fast = [
+    "numba", # For JIT-compiled padding (faster tokenization)
+]
+
 train = [
     "datasets", # For dataset loading and processing
     "evaluate", # For evaluation metrics

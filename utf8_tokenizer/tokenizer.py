@@ -24,6 +24,7 @@ BOS_TOKEN_ID = ord(BOS_TOKEN)
 
 EOS_TOKEN = ControlTokens.EndOfText
 EOS_TOKEN_ID = ord(EOS_TOKEN)
+EOS_BYTE = bytes([EOS_TOKEN_ID])
 
 
 class UTF8Tokenizer(PreTrainedTokenizer):
@@ -93,6 +94,21 @@ class UTF8Tokenizer(PreTrainedTokenizer):
         token_ids_0.insert(0, BOS_TOKEN_ID)  # BOS
         return token_ids_0
 
+    def _encode(self, texts: list[TextInput], add_special_tokens: bool) -> list[bytes]:
+        """Fast path: encode texts with optional special tokens using string concatenation."""
+        if add_special_tokens:
+            texts = [BOS_TOKEN + text + EOS_TOKEN for text in texts]
+        return [text.encode("utf-8") for text in texts]
+
+    def _encode_and_truncate(
+            self, texts: list[TextInput], max_length: int, add_special_tokens: bool
+    ) -> list[bytes]:
+        """Encode and truncate texts. Uses bytes slicing + concat (faster than bytearray)."""
+        if add_special_tokens:
+            # Prepend BOS via string concat, truncate, concat EOS byte
+            return [(BOS_TOKEN + text).encode("utf-8")[:max_length + 1] + EOS_BYTE for text in texts]
+        return [text.encode("utf-8")[:max_length] for text in texts]
+
     def _original_call(self, *args, **kwargs) -> BatchEncoding:
         return super().__call__(*args, **kwargs)
 
@@ -112,8 +128,6 @@ class UTF8Tokenizer(PreTrainedTokenizer):
             max_length: int | None = None,
             device: torch.device | None = None,
     ) -> TokenizerResult:
-        input_bytes = [bytearray(text, "utf-8") for text in texts]
-
         if truncation:
             if max_length is None:
                 warnings.warn(
@@ -121,16 +135,20 @@ class UTF8Tokenizer(PreTrainedTokenizer):
                     "no predefined maximum length. Default to no truncation.",
                     stacklevel=2,
                 )
+                truncation = False
             else:
-                corrected_max_length = max_length - 2 if add_special_tokens else max_length
-                if corrected_max_length < 0:
-                    warnings.warn("We need to remove more tokens than exist. Default to no truncation.", stacklevel=2)
-                else:
-                    input_bytes = [text_bytes[:corrected_max_length] for text_bytes in input_bytes]
+                max_length = max_length - 2 if add_special_tokens else max_length
+                if max_length < 0:
+                    warnings.warn(
+                        "We need to remove more tokens than exist. Default to no truncation.",
+                        stacklevel=2)
+                    truncation = False
 
-        if add_special_tokens:
-            # Faster to manipulate strings than lists of ints
-            input_bytes = [self.build_inputs_with_special_tokens(ids) for ids in input_bytes]
+        # Encode
+        if truncation:
+            input_bytes = self._encode_and_truncate(texts, max_length, add_special_tokens)
+        else:
+            input_bytes = self._encode(texts, add_special_tokens)
 
         if padding:
             # Fast path: pre-allocate and fill directly
@@ -138,7 +156,8 @@ class UTF8Tokenizer(PreTrainedTokenizer):
             attention_mask = input_ids.ne(PAD_TOKEN_ID)
         else:
             # Slow path - no padding means we need to return a list of tensors
-            input_ids = [torch.frombuffer(ids, dtype=torch.uint8) for ids in input_bytes]
+            # bytearray() needed because bytes are immutable -> read-only tensor warning
+            input_ids = [torch.frombuffer(bytearray(ids), dtype=torch.uint8) for ids in input_bytes]
             attention_mask = [torch.ones(len(ids), dtype=torch.bool) for ids in input_ids]
 
         if device is not None:
