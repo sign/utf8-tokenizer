@@ -236,5 +236,131 @@ def test_tokenizer_save_and_load():
         UTF8Tokenizer.from_pretrained(temp_dir)
 
 
+class TestTorchMethodEdgeCases:
+    """Additional edge case tests for the .torch() method."""
+
+    @pytest.fixture
+    def tokenizer(self):
+        return UTF8Tokenizer()
+
+    def test_single_element(self, tokenizer):
+        """Test torch method with a single element."""
+        result = tokenizer.torch(["hello"], padding=True)
+        assert isinstance(result.input_ids, torch.Tensor)
+        assert result.input_ids.shape == (1, 7)  # BOS + hello + EOS
+
+    def test_all_empty_strings_no_special_tokens(self, tokenizer):
+        """Test with all empty strings and no special tokens - extreme edge case."""
+        result = tokenizer.torch(["", ""], padding=True, add_special_tokens=False)
+        assert isinstance(result.input_ids, torch.Tensor)
+        assert result.input_ids.shape == (2, 0)  # Empty tensor
+        assert result.attention_mask.shape == (2, 0)
+
+    def test_all_empty_strings_with_special_tokens(self, tokenizer):
+        """Test with all empty strings but with special tokens."""
+        result = tokenizer.torch(["", ""], padding=True, add_special_tokens=True)
+        assert result.input_ids.shape == (2, 2)  # BOS + EOS only
+        assert result.input_ids[0].tolist() == [2, 3]
+        assert result.input_ids[1].tolist() == [2, 3]
+
+    def test_device_parameter_cpu(self, tokenizer):
+        """Test torch method with device parameter (CPU)."""
+        result = tokenizer.torch(["hello", "hi"], padding=True, device="cpu")
+        assert result.input_ids.device == torch.device("cpu")
+        assert result.attention_mask.device == torch.device("cpu")
+
+    def test_device_parameter_no_padding(self, tokenizer):
+        """Test torch method with device parameter without padding."""
+        result = tokenizer.torch(["hello", "hi"], padding=False, device="cpu")
+        assert isinstance(result.input_ids, list)
+        assert result.input_ids[0].device == torch.device("cpu")
+        assert result.attention_mask[0].device == torch.device("cpu")
+
+    def test_unicode_strings_with_padding(self, tokenizer):
+        """Test unicode strings with padding."""
+        texts = ["שלום", "hello", "世界"]  # Hebrew, English, Chinese
+        result = tokenizer.torch(texts, padding=True, add_special_tokens=True)
+        assert isinstance(result.input_ids, torch.Tensor)
+        # Hebrew שלום = 8 bytes, Chinese 世界 = 6 bytes, so Hebrew + BOS/EOS = 10
+        max_len = max(len(t.encode("utf-8")) for t in texts) + 2
+        assert result.input_ids.shape == (3, max_len)
+
+    def test_truncation_with_padding(self, tokenizer):
+        """Test truncation combined with padding."""
+        texts = ["hello world this is long", "hi"]
+        result = tokenizer.torch(texts, padding=True, truncation=True, max_length=10, add_special_tokens=True)
+        assert result.input_ids.shape == (2, 10)  # Both truncated/padded to max_length
+        # First should be truncated, second should be padded
+        assert result.attention_mask[0].sum().item() == 10  # All active (truncated)
+        assert result.attention_mask[1].sum().item() == 4  # BOS + hi + EOS = 4
+
+    def test_truncation_without_special_tokens(self, tokenizer):
+        """Test truncation without special tokens."""
+        texts = ["hello world"]
+        result = tokenizer.torch(texts, truncation=True, max_length=5, add_special_tokens=False)
+        assert len(result.input_ids[0]) == 5
+        assert result.input_ids[0].tolist() == [ord(c) for c in "hello"]
+
+    def test_string_with_null_bytes(self, tokenizer):
+        """Test string containing null bytes (which is pad token)."""
+        text = "a\x00b"
+        result = tokenizer.torch([text], padding=False, add_special_tokens=False)
+        # Null byte should be preserved
+        assert result.input_ids[0].tolist() == [ord("a"), 0, ord("b")]
+
+    def test_string_with_null_bytes_padding(self, tokenizer):
+        """Test strings with null bytes and padding - null bytes ARE padding by design."""
+        texts = ["a\x00b", "xy"]
+        result = tokenizer.torch(texts, padding=True, add_special_tokens=False)
+        # First string: a, \x00, b (length 3)
+        # Second string: x, y, pad (length 3)
+        assert result.input_ids.shape == (2, 3)
+        # Null bytes (0x00) are the pad token, so they're marked as not attended
+        assert result.attention_mask[0].tolist() == [True, False, True]  # a, pad, b
+        assert result.attention_mask[1].tolist() == [True, True, False]  # xy + pad
+
+    def test_very_long_strings(self, tokenizer):
+        """Test with very long strings."""
+        long_text = "a" * 10000
+        result = tokenizer.torch([long_text], padding=False, add_special_tokens=True)
+        assert len(result.input_ids[0]) == 10002  # BOS + 10000 + EOS
+
+    def test_mixed_lengths_attention_mask(self, tokenizer):
+        """Test that attention mask correctly identifies padded positions."""
+        texts = ["abc", "a", "abcde"]
+        result = tokenizer.torch(texts, padding=True, add_special_tokens=False)
+        # Lengths: 3, 1, 5 -> padded to 5
+        assert result.attention_mask[0].tolist() == [True, True, True, False, False]
+        assert result.attention_mask[1].tolist() == [True, False, False, False, False]
+        assert result.attention_mask[2].tolist() == [True, True, True, True, True]
+
+    def test_return_tensors_pt_via_call(self, tokenizer):
+        """Test that __call__ with return_tensors='pt' uses torch method."""
+        texts = ["hello", "world"]
+        result = tokenizer(texts, padding=True, return_tensors="pt")
+        assert "input_ids" in result
+        assert "attention_mask" in result
+        assert isinstance(result["input_ids"], torch.Tensor)
+
+    def test_return_tensors_other_via_call(self, tokenizer):
+        """Test that __call__ with other return_tensors falls back to original."""
+        texts = ["hello"]
+        result = tokenizer(texts, return_tensors=None, add_special_tokens=False)
+        # Without return_tensors, should use original call
+        assert result.input_ids == [[104, 101, 108, 108, 111]]
+
+    def test_truncation_warning_no_max_length(self, tokenizer):
+        """Test that truncation without max_length issues warning."""
+        import warnings
+        texts = ["hello world"]
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = tokenizer.torch(texts, truncation=True, max_length=None, add_special_tokens=False)
+            assert len(w) == 1
+            assert "no maximum length is provided" in str(w[0].message)
+            # Should return untouched since truncation was disabled
+            assert len(result.input_ids[0]) == 11
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
