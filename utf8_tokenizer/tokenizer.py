@@ -3,11 +3,11 @@ from collections import namedtuple
 from pathlib import Path
 
 import torch
-from torch.nn.utils.rnn import pad_sequence
 from transformers import AutoTokenizer, PreTrainedTokenizer
 from transformers.tokenization_utils_base import BatchEncoding, TextInput
 
 from utf8_tokenizer.control import ControlTokens
+from utf8_tokenizer.utils import pad_bytearrays_to_tensor
 
 
 def tokenize_ids(text: str, errors="strict"):
@@ -132,14 +132,13 @@ class UTF8Tokenizer(PreTrainedTokenizer):
             # Faster to manipulate strings than lists of ints
             input_bytes = [self.build_inputs_with_special_tokens(ids) for ids in input_bytes]
 
-        # torch.frombuffer is faster than torch.tensor for bytearrays since no copy is made
-        input_ids = [torch.frombuffer(ids, dtype=torch.uint8) for ids in input_bytes]
-
         if padding:
-            input_ids = pad_sequence(input_ids, batch_first=True, padding_value=PAD_TOKEN_ID)
-            attention_mask = input_ids.ne(0)
+            # Fast path: pre-allocate and fill directly
+            input_ids = pad_bytearrays_to_tensor(input_bytes, padding_value=PAD_TOKEN_ID)
+            attention_mask = input_ids.ne(PAD_TOKEN_ID)
         else:
             # Slow path - no padding means we need to return a list of tensors
+            input_ids = [torch.frombuffer(ids, dtype=torch.uint8) for ids in input_bytes]
             attention_mask = [torch.ones(len(ids), dtype=torch.bool) for ids in input_ids]
 
         if device is not None:
