@@ -22,14 +22,18 @@ try:
 except ImportError:
     def _fill_padded(output: np.ndarray, all_values: np.ndarray, lengths: np.ndarray, pad_value: int) -> None:
         """Fill padded output array using vectorized numpy ops."""
-        # Fill with padding first
         output.fill(pad_value)
-        # Then fill values
+        if len(all_values) == 0:
+            return
         batch_size = len(lengths)
         row_indices = np.repeat(np.arange(batch_size), lengths)
-        offsets = np.zeros(len(all_values), dtype=np.int32)
-        offsets[lengths.cumsum()[:-1]] = lengths[:-1]
-        col_indices = np.arange(len(all_values)) - offsets.cumsum()
+        cumsum = lengths.cumsum()
+        positions = np.arange(len(all_values))
+        groups = np.searchsorted(cumsum, positions, side='right')
+        prev_cumsum = np.empty(batch_size, dtype=np.uint32)
+        prev_cumsum[0] = 0
+        prev_cumsum[1:] = cumsum[:-1]
+        col_indices = positions - prev_cumsum[groups]
         output[row_indices, col_indices] = all_values
 
 
