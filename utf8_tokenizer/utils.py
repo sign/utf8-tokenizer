@@ -10,14 +10,14 @@ try:
         batch_size, max_len = output.shape
         offset = 0
         for i in range(batch_size):
-            l = lengths[i]
+            length = lengths[i]
             # Fill data
-            for j in range(l):
+            for j in range(length):
                 output[i, j] = all_values[offset + j]
             # Fill padding
-            for j in range(l, max_len):
+            for j in range(length, max_len):
                 output[i, j] = pad_value
-            offset += l
+            offset += length
 
 except ImportError:
     def _fill_padded(output: np.ndarray, all_values: np.ndarray, lengths: np.ndarray, pad_value: int) -> None:

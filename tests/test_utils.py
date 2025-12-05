@@ -25,9 +25,9 @@ class TestPadBytearraysToTensor:
     @pytest.fixture
     def unicode_bytearrays(self):
         return [
-            bytearray("שלום".encode("utf-8")),
-            bytearray("hello".encode("utf-8")),
-            bytearray("世界".encode("utf-8")),
+            bytearray("שלום".encode()),
+            bytearray(b"hello"),
+            bytearray("世界".encode()),
         ]
 
     @pytest.fixture
@@ -166,7 +166,7 @@ class TestPadBytearraysToTensor:
 
     def test_bytes_input_with_unicode(self):
         """Test bytes input with unicode content."""
-        byte_list = ["שלום".encode("utf-8"), "hello".encode("utf-8"), "世界".encode("utf-8")]
+        byte_list = ["שלום".encode(), b"hello", "世界".encode()]
         result = pad_bytearrays_to_tensor(byte_list)
         bytearray_list = [bytearray(b) for b in byte_list]
         expected = pad_bytearrays_to_tensor(bytearray_list)
