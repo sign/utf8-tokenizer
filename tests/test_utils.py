@@ -138,6 +138,70 @@ class TestPadBytearraysToTensor:
         result = pad_bytearrays_to_tensor(bytearrays)
         assert torch.equal(result, expected)
 
+    def test_all_empty_bytearrays(self):
+        """Test with all empty bytearrays - edge case that produces (n, 0) tensor."""
+        bytearrays = [bytearray(b""), bytearray(b""), bytearray(b"")]
+        loop_result = pad_bytearrays_to_tensor_loop(bytearrays)
+        vectorized_result = pad_bytearrays_to_tensor(bytearrays)
+        assert torch.equal(loop_result, vectorized_result)
+        assert vectorized_result.shape == (3, 0)  # All empty
+
+    def test_single_empty_bytearray(self):
+        """Test with a single empty bytearray."""
+        bytearrays = [bytearray(b"")]
+        loop_result = pad_bytearrays_to_tensor_loop(bytearrays)
+        vectorized_result = pad_bytearrays_to_tensor(bytearrays)
+        assert torch.equal(loop_result, vectorized_result)
+        assert vectorized_result.shape == (1, 0)
+
+    def test_bytes_input(self):
+        """Test that bytes (not bytearray) work correctly - matches type annotation."""
+        # The function signature says list[bytes], so test with bytes
+        byte_list = [b"hello", b"hi", b"world!"]
+        result = pad_bytearrays_to_tensor(byte_list)
+        # Compare with bytearray version
+        bytearray_list = [bytearray(b) for b in byte_list]
+        expected = pad_bytearrays_to_tensor(bytearray_list)
+        assert torch.equal(result, expected)
+
+    def test_bytes_input_with_unicode(self):
+        """Test bytes input with unicode content."""
+        byte_list = ["שלום".encode("utf-8"), "hello".encode("utf-8"), "世界".encode("utf-8")]
+        result = pad_bytearrays_to_tensor(byte_list)
+        bytearray_list = [bytearray(b) for b in byte_list]
+        expected = pad_bytearrays_to_tensor(bytearray_list)
+        assert torch.equal(result, expected)
+
+    def test_mixed_empty_positions(self):
+        """Test empty bytearrays at different positions."""
+        bytearrays = [bytearray(b""), bytearray(b"abc"), bytearray(b""), bytearray(b"de")]
+        loop_result = pad_bytearrays_to_tensor_loop(bytearrays)
+        vectorized_result = pad_bytearrays_to_tensor(bytearrays)
+        assert torch.equal(loop_result, vectorized_result)
+        assert vectorized_result.shape == (4, 3)
+
+    def test_very_long_sequences(self):
+        """Test with very long byte sequences."""
+        bytearrays = [
+            bytearray(b"a" * 10000),
+            bytearray(b"b" * 5000),
+            bytearray(b"c" * 15000),
+        ]
+        loop_result = pad_bytearrays_to_tensor_loop(bytearrays)
+        vectorized_result = pad_bytearrays_to_tensor(bytearrays)
+        assert torch.equal(loop_result, vectorized_result)
+        assert vectorized_result.shape == (3, 15000)
+
+    def test_null_bytes(self):
+        """Test bytearrays containing null bytes."""
+        bytearrays = [bytearray(b"\x00\x00\x00"), bytearray(b"a\x00b"), bytearray(b"\x00")]
+        loop_result = pad_bytearrays_to_tensor_loop(bytearrays)
+        vectorized_result = pad_bytearrays_to_tensor(bytearrays)
+        assert torch.equal(loop_result, vectorized_result)
+        # Verify null bytes are preserved
+        assert vectorized_result[0, 0].item() == 0
+        assert vectorized_result[1, 1].item() == 0
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
