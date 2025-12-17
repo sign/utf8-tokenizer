@@ -108,14 +108,14 @@ The `UTF8ValidationLogitsProcessor` prevents byte-level tokenizers from generati
 python experiments/benchmark.py
 ```
 
-On MacBook Pro, with Apple M4 Pro chip, just converting texts of 6 words in different languages to bytes,
-without wrapping them in tensors, creating attention masks, or padding, runs at 127.4k/sec.
+On MacBook Pro, with Apple M4 Pro chip, just converting texts of 75 words in different languages to bytes,
+without wrapping them in tensors, creating attention masks, or padding, runs at 109.9k/sec.
 
-Calling the ByT5 tokenizer runs at 6.2k/sec.
-When we call our new tokenizer, through the `__call__` path, we get 10.5k/sec, which is a bit faster.
+Calling the ByT5 tokenizer runs at 0.4k/sec.
+When we call our new tokenizer, through the `__call__` path, we get 0.5k/sec, which is a bit faster.
 
-Our optimized version with zero-copy runs at 86.7k/sec, where the loss of performance compared to the raw ints is
-in padding the input ids into a properly padded tensor. **This is a 14x speedup over the original tokenizer.**
+Our optimized version with zero-copy runs at 66k/sec, where the loss of performance compared to the raw ints is
+in padding the input ids into a properly padded tensor. **This is a 164x speedup over the original tokenizer.**
 
 ### Bit-Biased Byte Embedding
 

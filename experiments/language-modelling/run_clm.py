@@ -668,9 +668,13 @@ def main():
 
         metrics = train_result.metrics
 
-        max_train_samples = (
-            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
-        )
+        if data_args.max_train_samples is not None:
+            max_train_samples = data_args.max_train_samples
+        elif data_args.streaming:
+            max_train_samples = 0 # TODO: figure out a better way to get the length of streaming dataset
+        else:
+            max_train_samples = len(train_dataset)
+
         if data_args.streaming:
             metrics["train_samples"] = max_train_samples
         else:
