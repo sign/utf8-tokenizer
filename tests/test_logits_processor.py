@@ -389,6 +389,111 @@ class TestRealWorldSequences:
                 assert processed[0, i] == float("-inf")
 
 
+class TestNullPadding:
+    """Test that trailing NULL bytes are correctly ignored."""
+
+    def test_incomplete_utf8_with_single_null(self, processor):
+        """Test that incomplete UTF-8 + NULL padding is handled correctly."""
+        # Both sequences should produce the same result
+        seq_no_padding = torch.tensor([[0xE2, 0x9C]])
+        seq_with_padding = torch.tensor([[0xE2, 0x9C, 0x00]])
+
+        allowed_no_padding = processor._get_allowed_next_bytes(seq_no_padding[0])
+        allowed_with_padding = processor._get_allowed_next_bytes(seq_with_padding[0])
+
+        # Both should only allow 0x80-0xBF (third byte of 3-byte sequence)
+        expected = set(range(0x80, 0xC0))
+        assert allowed_no_padding == expected
+        assert allowed_with_padding == expected
+
+    def test_incomplete_utf8_with_multiple_nulls(self, processor):
+        """Test that multiple trailing NULLs are ignored."""
+        seq_no_padding = torch.tensor([[0xE2, 0x9C]])
+        seq_with_padding = torch.tensor([[0xE2, 0x9C, 0x00, 0x00, 0x00]])
+
+        allowed_no_padding = processor._get_allowed_next_bytes(seq_no_padding[0])
+        allowed_with_padding = processor._get_allowed_next_bytes(seq_with_padding[0])
+
+        expected = set(range(0x80, 0xC0))
+        assert allowed_no_padding == expected
+        assert allowed_with_padding == expected
+
+    def test_complete_utf8_with_null_padding(self, processor):
+        """Test that complete UTF-8 + NULL padding allows start bytes."""
+        seq_no_padding = torch.tensor([[0xE2, 0x9C, 0x93]])  # Complete '✓'
+        seq_with_padding = torch.tensor([[0xE2, 0x9C, 0x93, 0x00]])
+
+        allowed_no_padding = processor._get_allowed_next_bytes(seq_no_padding[0])
+        allowed_with_padding = processor._get_allowed_next_bytes(seq_with_padding[0])
+
+        # Both should allow all valid start bytes
+        expected = processor._valid_start_bytes()
+        assert allowed_no_padding == expected
+        assert allowed_with_padding == expected
+
+    def test_four_byte_incomplete_with_null(self, processor):
+        """Test 4-byte incomplete sequence with NULL padding."""
+        # Test at different positions in 4-byte sequence
+        test_cases = [
+            ([0xF0, 0x9F], [0xF0, 0x9F, 0x00]),  # 2 of 4 bytes
+            ([0xF0, 0x9F, 0x98], [0xF0, 0x9F, 0x98, 0x00]),  # 3 of 4 bytes
+        ]
+
+        for seq_no_pad, seq_with_pad in test_cases:
+            allowed_no_pad = processor._get_allowed_next_bytes(torch.tensor(seq_no_pad))
+            allowed_with_pad = processor._get_allowed_next_bytes(torch.tensor(seq_with_pad))
+
+            # Both should produce the same result
+            assert allowed_no_pad == allowed_with_pad
+            # Should allow continuation bytes
+            assert allowed_no_pad == set(range(0x80, 0xC0))
+
+    def test_null_in_middle_not_stripped(self, processor):
+        """Test that NULL bytes in the middle are not stripped."""
+        # NULL in the middle should be treated as a complete character
+        # So the incomplete [0xE2, 0x9C] at the end should determine the state
+        seq = torch.tensor([[0x48, 0x00, 0xE2, 0x9C]])  # 'H', NULL, incomplete '✓'
+
+        allowed = processor._get_allowed_next_bytes(seq[0])
+
+        # Should only allow 0x80-0xBF (for completing the '✓')
+        expected = set(range(0x80, 0xC0))
+        assert allowed == expected
+
+    def test_only_nulls(self, processor):
+        """Test sequence with only NULL bytes."""
+        seq = torch.tensor([[0x00, 0x00, 0x00]])
+
+        allowed = processor._get_allowed_next_bytes(seq[0])
+
+        # After stripping all NULLs, should treat as empty sequence
+        # and allow all start bytes
+        expected = processor._valid_start_bytes()
+        assert allowed == expected
+
+    def test_logits_processing_with_null_padding(self, processor):
+        """Test that the full __call__ method handles NULL padding correctly."""
+        # Create batch with padded and unpadded incomplete UTF-8
+        input_no_pad = torch.tensor([[0xE2, 0x9C]])
+        input_with_pad = torch.tensor([[0xE2, 0x9C, 0x00]])
+
+        scores_no_pad = torch.zeros((1, 256))
+        scores_with_pad = torch.zeros((1, 256))
+
+        processed_no_pad = processor(input_no_pad, scores_no_pad)
+        processed_with_pad = processor(input_with_pad, scores_with_pad)
+
+        # Both should mask the same bytes
+        # Only 0x80-0xBF should be allowed (not -inf)
+        for i in range(256):
+            expected_masked = not (0x80 <= i < 0xC0)
+            assert (processed_no_pad[0, i] == float("-inf")) == expected_masked
+            assert (processed_with_pad[0, i] == float("-inf")) == expected_masked
+
+            # The masking should be identical
+            assert (processed_no_pad[0, i] == float("-inf")) == (processed_with_pad[0, i] == float("-inf"))
+
+
 class TestWithActualModel:
     """Test UTF8ValidationLogitsProcessor with an actual language model."""
 

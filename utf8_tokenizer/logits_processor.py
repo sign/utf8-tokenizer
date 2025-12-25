@@ -7,6 +7,7 @@ form valid UTF-8 byte sequences by masking out invalid continuations.
 
 import torch
 from transformers import LogitsProcessor
+from utf8_tokenizer.control import ControlTokens
 
 
 class UTF8ValidationLogitsProcessor(LogitsProcessor):
@@ -62,18 +63,19 @@ class UTF8ValidationLogitsProcessor(LogitsProcessor):
         batch_size = input_ids.shape[0]
         vocab_size = scores.shape[1]
 
-        # Create a mask initialized to False (all tokens allowed by default)
-        mask = torch.zeros((batch_size, vocab_size), dtype=torch.bool, device=scores.device)
+        # Create a mask initialized to True (all tokens masked by default)
+        # We'll set allowed bytes to False
+        mask = torch.ones((batch_size, vocab_size), dtype=torch.bool, device=scores.device)
 
         for batch_idx in range(batch_size):
             # Get the UTF-8 state by examining the last few bytes
             seq = input_ids[batch_idx]
             allowed_bytes = self._get_allowed_next_bytes(seq)
 
-            # Mask out all bytes that are not allowed
-            for byte_val in range(256):
-                if byte_val not in allowed_bytes:
-                    mask[batch_idx, byte_val] = True
+            # Directly set allowed bytes to False (unmasked) using advanced indexing
+            # This is faster than creating intermediate tensors
+            allowed_list = list(allowed_bytes)
+            mask[batch_idx, allowed_list] = False
 
         # Set masked positions to -inf
         scores = scores.masked_fill(mask, float("-inf"))
@@ -96,6 +98,15 @@ class UTF8ValidationLogitsProcessor(LogitsProcessor):
 
         # Convert to list for easier manipulation
         seq_list = sequence.tolist()
+
+        # Strip trailing NULL bytes (0x00) - these are often used as padding
+        # We need to ignore them to correctly determine UTF-8 state
+        while seq_list and seq_list[-1] == ord(ControlTokens.Null):
+            seq_list.pop()
+
+        # If sequence is empty after stripping NULLs, we're at the start
+        if not seq_list:
+            return self._valid_start_bytes()
 
         # Find the start of the current incomplete UTF-8 sequence
         # by looking backwards from the end
