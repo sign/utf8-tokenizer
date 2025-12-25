@@ -160,11 +160,11 @@ class UTF8Tokenizer(PreTrainedTokenizer):
             input_ids = [torch.frombuffer(bytearray(ids), dtype=torch.uint8) for ids in input_bytes]
             attention_mask = [torch.ones(len(ids), dtype=torch.bool) for ids in input_ids]
 
-        # # IDs should be long tensors, to prevent issues with some models
-        # if isinstance(input_ids, list):
-        #     input_ids = [ids.long() for ids in input_ids]
-        # else:
-        #     input_ids = input_ids.long()
+        # IDs should be long tensors, to prevent issues with some models
+        if isinstance(input_ids, list):
+            input_ids = [ids.long() for ids in input_ids]
+        else:
+            input_ids = input_ids.long()
 
         if device is not None:
             if isinstance(input_ids, list):
