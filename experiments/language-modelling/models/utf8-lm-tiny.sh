@@ -18,13 +18,13 @@ python run_clm.py \
   --dataloader_persistent_workers True \
   --do_train True \
   --save_strategy steps \
-  --max_steps 20000 \
+  --max_steps 100000 \
   --save_steps 1000 \
-  --save_total_limit 2 \
+  --save_total_limit 1 \
   --logging_steps 100 \
   --logging_strategy steps \
   --model_name_or_path sbintuitions/tiny-lm \
-  --per_device_train_batch_size 128 \
+  --per_device_train_batch_size 256 \
   --block_size 256 \
   --optim adamw_torch_fused \
   --learning_rate 3e-4 \

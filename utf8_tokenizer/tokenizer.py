@@ -10,6 +10,21 @@ from utf8_tokenizer.control import ControlTokens
 from utf8_tokenizer.utils import pad_bytearrays_to_tensor
 
 
+def _is_embedding_uint8_supported():
+    """Check if torch.nn.Embedding supports uint8 indices (only checked once at import)."""
+    try:
+        embedding = torch.nn.Embedding(2, 1)
+        test_input = torch.tensor([0], dtype=torch.uint8)
+        embedding(test_input)
+    except (RuntimeError, TypeError):
+        return False
+    else:
+        return True
+
+
+EMBEDDING_SUPPORTS_uINT8 = _is_embedding_uint8_supported()
+
+
 def tokenize_ids(text: str, errors="strict"):
     return list(text.encode("utf-8", errors=errors))
 
@@ -160,11 +175,12 @@ class UTF8Tokenizer(PreTrainedTokenizer):
             input_ids = [torch.frombuffer(bytearray(ids), dtype=torch.uint8) for ids in input_bytes]
             attention_mask = [torch.ones(len(ids), dtype=torch.bool) for ids in input_ids]
 
-        # IDs should be long tensors, to prevent issues with some models
-        if isinstance(input_ids, list):
-            input_ids = [ids.long() for ids in input_ids]
-        else:
-            input_ids = input_ids.long()
+        # IDs should be long tensors if embedding doesn't support uint8
+        if not EMBEDDING_SUPPORTS_uINT8:
+            if isinstance(input_ids, list):
+                input_ids = [ids.long() for ids in input_ids]
+            else:
+                input_ids = input_ids.long()
 
         if device is not None:
             if isinstance(input_ids, list):
