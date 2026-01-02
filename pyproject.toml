@@ -33,6 +33,7 @@ train = [
 [tool.setuptools]
 packages = [
     "utf8_tokenizer",
+    "utf8_tokenizer.groups",
 ]
 
 [tool.setuptools.package-data]
