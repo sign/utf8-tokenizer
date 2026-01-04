@@ -95,17 +95,28 @@ class PatchedBitEmbeddings(nn.Module):
     def _needs_refresh(self) -> bool:
         w = self.embeddings.weight
         bw = self.bit_proj_w
+        # In inference mode, tensors don't track version counters
+        # Skip version checks if in inference mode
+        if torch.is_inference_mode_enabled():
+            version_changed = False
+        else:
+            version_changed = (
+                w._version != self._last_base_v
+                or bw._version != self._last_bit_v
+            )
+
         return (
-            w._version != self._last_base_v
-            or bw._version != self._last_bit_v
+            version_changed
             or w.device is not self._last_device
             or w.dtype != self._last_dtype
         )
 
     def _mark_refreshed(self):
         w = self.embeddings.weight
-        self._last_base_v = w._version
-        self._last_bit_v = self.bit_proj_w._version
+        # Only track versions if not in inference mode
+        if not torch.is_inference_mode_enabled():
+            self._last_base_v = w._version
+            self._last_bit_v = self.bit_proj_w._version
         self._last_device = w.device
         self._last_dtype = w.dtype
 

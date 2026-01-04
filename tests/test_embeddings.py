@@ -179,3 +179,16 @@ class TestEmbeddings:
         # Verify base embeddings have changed too
         final_embedding_weight = patched_embeddings.embeddings.weight.data
         assert not torch.allclose(final_embedding_weight, initial_embedding_weight, atol=1e-6)
+
+    def test_bit_projection_with_inference_mode(self, model, sample_input):
+        """Test that bit projection embeddings work in torch.inference_mode()."""
+        patch_embedding_layers(model)
+        patched_embeddings = model.get_input_embeddings()
+
+        # Test with inference mode
+        with torch.inference_mode():
+            output = patched_embeddings(sample_input)
+
+        # Verify output shape and validity
+        assert output.shape == (2, 16, patched_embeddings.embeddings.embedding_dim)
+        assert torch.isfinite(output).all()
