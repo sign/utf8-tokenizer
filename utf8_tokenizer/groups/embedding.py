@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as functional
 
+from utf8_tokenizer.embeddings import PatchedBitEmbeddings
+
 
 def is_leading_byte(byte: int) -> bool:
     """Check if a byte is a UTF-8 leading byte (not a continuation byte)."""
@@ -44,8 +46,12 @@ class UTF8GroupedEmbedding(nn.Module):
 
         # Learnable embedding matrix, initialized with normalized rows for roundtrip
         self.embedding = nn.Embedding(self.num_embeddings, self.byte_dim)
+
         with torch.no_grad():
             self.embedding.weight.copy_(functional.normalize(self.embedding.weight, p=2, dim=1))
+
+        # Patch embedding layer to support bit-biasing
+        self.embedding = PatchedBitEmbeddings(self.embedding)
 
     def encode(self, byte_indices: torch.Tensor) -> torch.Tensor:
         """
@@ -75,7 +81,9 @@ class UTF8GroupedEmbedding(nn.Module):
         msg = f"Expected 2D or 3D input, got {len(input_shape)}D"
         raise ValueError(msg)
 
-    def decode(self, grouped: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def decode(
+        self, grouped: torch.Tensor, compute_decoded: bool = True
+    ) -> tuple[torch.Tensor | None, torch.Tensor]:
         """
         Decode grouped representation back to byte indices.
 
@@ -83,9 +91,11 @@ class UTF8GroupedEmbedding(nn.Module):
             grouped: Grouped representation
                 - Shape (batch, embedding_size) -> returns (batch, 4)
                 - Shape (batch, seq, embedding_size) -> returns (batch, seq, 4)
+            compute_decoded: If True, compute argmax to get decoded bytes.
+                If False, return None for decoded (faster for training).
 
         Returns:
-            Tuple of (decoded_bytes, logits)
+            Tuple of (decoded_bytes, logits). decoded_bytes is None if compute_decoded=False.
         """
         input_shape = grouped.shape
 
@@ -94,7 +104,7 @@ class UTF8GroupedEmbedding(nn.Module):
             batch = input_shape[0]
             embeddings = grouped.view(batch, self.max_bytes, self.byte_dim)
             logits = embeddings @ self.embedding.weight.T
-            decoded = logits.argmax(dim=-1)
+            decoded = logits.argmax(dim=-1) if compute_decoded else None
             return decoded, logits
 
         elif len(input_shape) == 3:
@@ -102,7 +112,7 @@ class UTF8GroupedEmbedding(nn.Module):
             batch, seq, _ = input_shape
             embeddings = grouped.view(batch, seq, self.max_bytes, self.byte_dim)
             logits = embeddings @ self.embedding.weight.T
-            decoded = logits.argmax(dim=-1)
+            decoded = logits.argmax(dim=-1) if compute_decoded else None
             return decoded, logits
 
         msg = f"Expected 2D or 3D input, got {len(input_shape)}D"

@@ -118,7 +118,7 @@ class TestUTF8GroupedEmbedding:
     def test_embedding_is_learnable(self):
         """Test that embedding is a learnable parameter."""
         layer = UTF8GroupedEmbedding(embedding_size=256)
-        assert isinstance(layer.embedding, torch.nn.Embedding)
+        assert isinstance(layer.embedding, torch.nn.Module)
         assert layer.embedding.weight.requires_grad
 
     def test_embedding_shape(self):
