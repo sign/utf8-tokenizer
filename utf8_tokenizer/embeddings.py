@@ -145,6 +145,13 @@ class PatchedBitEmbeddings(nn.Module):
         #  https://github.com/pytorch/pytorch/issues/162918
         return self.weight[input_ids]
 
+def tie_embeddings(model):
+    try:
+        # HuggingFace Transformers <=v4
+        model.tie_embeddings_and_encoder_decoder()
+    except AttributeError:
+        # HuggingFace Transformers >=v5
+        model.tie_embeddings()
 
 def patch_embedding_layers(model):
     embeddings: Embedding = model.get_input_embeddings()
@@ -153,8 +160,7 @@ def patch_embedding_layers(model):
     patched_embeddings = PatchedBitEmbeddings(embeddings)
 
     model.set_input_embeddings(patched_embeddings)
-    model.tie_embeddings_and_encoder_decoder()
-
+    tie_embeddings(model)
 
 def join_embedding_layers(model):
     embeddings: PatchedBitEmbeddings = model.get_input_embeddings()
@@ -165,4 +171,4 @@ def join_embedding_layers(model):
     original_embedding.weight.data = embeddings.weight.data
 
     model.set_input_embeddings(original_embedding)
-    model.tie_embeddings_and_encoder_decoder()
+    tie_embeddings(model)
