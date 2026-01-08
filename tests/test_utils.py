@@ -42,7 +42,7 @@ class TestPadBytearraysToTensor:
     @pytest.mark.parametrize("padding_value", [0, 255, 42])
     def test_vectorized_matches_reference(self, sample_bytearrays, padding_value):
         expected = reference_pad_sequence(sample_bytearrays, padding_value)
-        result = pad_bytearrays_to_tensor(sample_bytearrays, padding_value)
+        result = pad_bytearrays_to_tensor(sample_bytearrays, torch.uint8, padding_value)
         assert torch.equal(result, expected)
 
     def test_vectorized_matches_reference_unicode(self, unicode_bytearrays):
@@ -67,7 +67,7 @@ class TestPadBytearraysToTensor:
     @pytest.mark.parametrize("padding_value", [0, 255, 42])
     def test_loop_matches_reference(self, sample_bytearrays, padding_value):
         expected = reference_pad_sequence(sample_bytearrays, padding_value)
-        result = pad_bytearrays_to_tensor_loop(sample_bytearrays, padding_value)
+        result = pad_bytearrays_to_tensor_loop(sample_bytearrays, torch.uint8, padding_value)
         assert torch.equal(result, expected)
 
     def test_loop_matches_reference_unicode(self, unicode_bytearrays):
@@ -98,7 +98,7 @@ class TestPadBytearraysToTensor:
 
     def test_padding_applied_correctly(self):
         bytearrays = [bytearray(b"ab"), bytearray(b"abcd")]
-        result = pad_bytearrays_to_tensor(bytearrays, padding_value=0)
+        result = pad_bytearrays_to_tensor(bytearrays, torch.uint8, 0)
 
         # First row: "ab" + padding
         assert result[0].tolist() == [ord("a"), ord("b"), 0, 0]

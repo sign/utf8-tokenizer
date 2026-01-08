@@ -2,7 +2,7 @@ import torch
 from tqdm import tqdm
 
 from utf8_tokenizer.byt5_comparison import ByT5ComparableTokenizer
-from utf8_tokenizer.tokenizer import UTF8Tokenizer, tokenize_ids
+from utf8_tokenizer.tokenizer import UTF8Tokenizer
 
 if __name__ == "__main__":
     tokenizer = UTF8Tokenizer()
@@ -26,7 +26,7 @@ if __name__ == "__main__":
 
     for _ in tqdm(range(num), desc="just tokenizing to ints"):
         for text in texts:
-            tokenize_ids(text)
+            tokenizer._tokenize_ids(text)
 
     for _ in tqdm(range(num), desc="Calling the new tokenizer.torch"):
         tokenizer.torch(texts, add_special_tokens=True, padding=True)

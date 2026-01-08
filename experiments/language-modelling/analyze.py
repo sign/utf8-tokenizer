@@ -3,7 +3,7 @@ from transformers import AutoModelForCausalLM, AutoConfig
 import torch
 from safetensors.torch import save_file
 
-from utf8_tokenizer.embeddings import patch_embedding_layers, join_embedding_layers
+from utf8_tokenizer.byte_embeddings import patch_embedding_layers, join_embedding_layers
 
 MODEL_CHECKPOINT = "./output-tiny-lm-fineweb"
 

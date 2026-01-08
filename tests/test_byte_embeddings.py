@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from transformers import AutoModelForMaskedLM
 
-from utf8_tokenizer.embeddings import (
+from utf8_tokenizer.byte_embeddings import (
     PatchedBitEmbeddings,
     join_embedding_layers,
     patch_embedding_layers,

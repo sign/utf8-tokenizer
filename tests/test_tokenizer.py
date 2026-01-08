@@ -362,5 +362,56 @@ class TestTorchMethodEdgeCases:
             assert len(result.input_ids[0]) == 11
 
 
+class TestUTF16Tokenizer:
+    @pytest.fixture
+    def tokenizer(self):
+        from utf8_tokenizer import UTF16Tokenizer
+        return UTF16Tokenizer()
+
+    def test_basic_tokenization(self, tokenizer):
+        text = "hello"
+        result = tokenizer.torch([text], add_special_tokens=False)
+        # UTF-16: each ASCII char is one 16-bit code unit
+        assert result.input_ids[0].tolist() == [104, 101, 108, 108, 111]
+
+    def test_unicode_roundtrip(self, tokenizer):
+        text = "你好世界"
+        result = tokenizer.torch([text], add_special_tokens=False, padding=True)
+        decoded = tokenizer.decode(result.input_ids[0].tolist())
+        assert decoded == text
+
+    def test_emoji_surrogate_pairs(self, tokenizer):
+        text = "😀"
+        result = tokenizer.torch([text], add_special_tokens=False)
+        # Emoji requires surrogate pair in UTF-16 (2 code units)
+        assert len(result.input_ids[0]) == 2
+
+
+class TestUTF32Tokenizer:
+    @pytest.fixture
+    def tokenizer(self):
+        from utf8_tokenizer import UTF32Tokenizer
+        return UTF32Tokenizer()
+
+    def test_basic_tokenization(self, tokenizer):
+        text = "hello"
+        result = tokenizer.torch([text], add_special_tokens=False)
+        # UTF-32: each char is one 32-bit code unit
+        assert result.input_ids[0].tolist() == [104, 101, 108, 108, 111]
+
+    def test_unicode_roundtrip(self, tokenizer):
+        text = "你好世界"
+        result = tokenizer.torch([text], add_special_tokens=False, padding=True)
+        decoded = tokenizer.decode(result.input_ids[0].tolist())
+        assert decoded == text
+
+    def test_emoji_single_codepoint(self, tokenizer):
+        text = "😀"
+        result = tokenizer.torch([text], add_special_tokens=False)
+        # Emoji is single code point in UTF-32 (1 code unit)
+        assert len(result.input_ids[0]) == 1
+        assert result.input_ids[0].tolist() == [128512]  # U+1F600
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

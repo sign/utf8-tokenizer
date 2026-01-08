@@ -66,7 +66,7 @@ from transformers.testing_utils import CaptureLogger
 from transformers.utils.versions import require_version
 
 from utf8_tokenizer.byt5_comparison import ByT5ComparableTokenizer
-from utf8_tokenizer.embeddings import patch_embedding_layers
+from utf8_tokenizer.byte_embeddings import patch_embedding_layers
 from utf8_tokenizer.groups.causal_lm import GroupedCausalLMConfig, GroupedCausalLMWrapper
 from utf8_tokenizer.tokenizer import UTF8Tokenizer
 

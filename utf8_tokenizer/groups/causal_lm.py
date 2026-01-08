@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as functional
 from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
@@ -269,7 +269,7 @@ class GroupedCausalLMWrapper(PreTrainedModel):
         base_model_name_or_path: str,
         tokenizer: UTF8Tokenizer | None = None,
         **kwargs,
-    ) -> "GroupedCausalLMWrapper":
+    ) -> GroupedCausalLMWrapper:
         """Create a GroupedCausalLMWrapper from a base model name/path.
 
         Args:

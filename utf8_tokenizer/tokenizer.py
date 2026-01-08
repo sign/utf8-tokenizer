@@ -1,5 +1,8 @@
+import struct
+import sys
 import warnings
 from collections import namedtuple
+from functools import cache
 from pathlib import Path
 
 import torch
@@ -10,23 +13,16 @@ from utf8_tokenizer.control import ControlTokens
 from utf8_tokenizer.utils import pad_bytearrays_to_tensor
 
 
-def _is_embedding_uint8_supported():
-    """Check if torch.nn.Embedding supports uint8 indices (only checked once at import)."""
+@cache
+def is_embedding_dtype_supported(dtype: torch.dtype) -> bool:
     try:
         embedding = torch.nn.Embedding(2, 1)
-        test_input = torch.tensor([0], dtype=torch.uint8)
+        test_input = torch.tensor([0], dtype=dtype)
         embedding(test_input)
     except (RuntimeError, TypeError):
         return False
     else:
         return True
-
-
-EMBEDDING_SUPPORTS_uINT8 = _is_embedding_uint8_supported()
-
-
-def tokenize_ids(text: str, errors="strict"):
-    return list(text.encode("utf-8", errors=errors))
 
 
 TokenizerResult = namedtuple("TokenizerResult", ["input_ids", "attention_mask"])
@@ -39,22 +35,34 @@ BOS_TOKEN_ID = ord(BOS_TOKEN)
 
 EOS_TOKEN = ControlTokens.EndOfText
 EOS_TOKEN_ID = ord(EOS_TOKEN)
-EOS_BYTE = bytes([EOS_TOKEN_ID])
+
+STRUCT_FORMAT: dict[torch.dtype, str] = {
+    torch.uint8: "B",
+    torch.uint16: "H",
+    torch.uint32: "I",
+}
 
 
-class UTF8Tokenizer(PreTrainedTokenizer):
+class UTFTokenizer(PreTrainedTokenizer):
     """
-    Custom UTF8 Byte Level Tokenizer implementation,
-    extending PreTrainedTokenizer for basic Hugging Face ecosystem support.
+    Base UTF Tokenizer implementation supporting UTF-8, UTF-16, and UTF-32 encodings.
+    Extends PreTrainedTokenizer for Hugging Face ecosystem support.
 
-    This tokenizer only supports exactly 256 tokens, with no support for "special tokens".
-    See README.md to learn more how this works with control tokens instead.
+    Subclasses should set `encoding` and `dtype` class attributes.
 
-    Additionally, exposes a `.torch` method, which fuses and skips unnecessary ops,
-    to achieve a ~8x speedup over `__call__` for training purposes.
+    Exposes a `.torch` method for optimized tensor creation.
     """
+
+    __slots__ = ('_struct_format', '_bytes_per_unit', '_eos_encoded')
+
+    encoding: str = "utf-8"
+    dtype: torch.dtype = torch.uint8
 
     def __init__(self, **kwargs):
+        self._struct_format = STRUCT_FORMAT[self.dtype]
+        self._bytes_per_unit = struct.calcsize(self._struct_format)
+        self._eos_encoded = EOS_TOKEN.encode(self.encoding)
+
         kwargs["pad_token"] = PAD_TOKEN
         kwargs["pad_token_id"] = PAD_TOKEN_ID
         kwargs["bos_token"] = BOS_TOKEN
@@ -71,22 +79,29 @@ class UTF8Tokenizer(PreTrainedTokenizer):
 
     @property
     def vocab_size(self) -> int:
-        return 2 ** 8
+        # Always 256 because downstream models should use byte-level embedding
+        return 256
 
     def add_tokens(self, *args, **kwargs):
-        raise NotImplementedError("UTF8Tokenizer does not support adding tokens")
+        raise NotImplementedError("UTFTokenizer does not support adding tokens")
+
+    def _tokenize_ids(self, text: str, errors="strict") -> list[int]:
+        bytes_per_unit, struct_format = self._bytes_per_unit, self._struct_format
+        encoded = text.encode(self.encoding, errors=errors)
+        count = len(encoded) // bytes_per_unit
+        return list(struct.unpack(f"{count}{struct_format}", encoded))
 
     def get_vocab(self):
         return {chr(i): i for i in range(self.vocab_size)}
 
     def _tokenize(self, text: TextInput, errors="strict", **kwargs):
-        return [chr(c) for c in tokenize_ids(text, errors=errors)]
+        return [chr(c) for c in self._tokenize_ids(text, errors=errors)]
 
     def tokenize(self, text: TextInput, errors="strict", **kwargs):
         return self._tokenize(text, errors=errors, **kwargs)
 
     def _encode_plus(self, text: TextInput, **kwargs):
-        return self.prepare_for_model(tokenize_ids(text), **kwargs)
+        return self.prepare_for_model(self._tokenize_ids(text), **kwargs)
 
     def _convert_token_to_id(self, token: str):
         return ord(token)
@@ -95,34 +110,36 @@ class UTF8Tokenizer(PreTrainedTokenizer):
         return chr(index)
 
     def convert_tokens_to_string(self, tokens: list[str]):
-        """Converts a sequence of tokens (string) in a single string."""
-        _bytes = bytes(ord(token) for token in tokens)
-        return _bytes.decode("utf-8", errors="ignore")
+        ids = [ord(t) for t in tokens]
+        _bytes = struct.pack(f"{len(ids)}{self._struct_format}", *ids)
+        return _bytes.decode(self.encoding, errors="ignore")
 
     def build_inputs_with_special_tokens(
-            self, token_ids_0: list[int] | bytearray, token_ids_1: list[int] | None = None
+        self, token_ids_0: list[int] | bytearray, token_ids_1: list[int] | None = None
     ) -> list[int] | bytearray:
-        assert token_ids_1 is None, "UTF8Tokenizer only supports single sequence"
+        assert token_ids_1 is None, "UTFTokenizer only supports single sequence"
 
-        # Experimentally, the fastest way to add BOS/EOS
-        token_ids_0.append(EOS_TOKEN_ID)  # EOS
-        token_ids_0.insert(0, BOS_TOKEN_ID)  # BOS
+        token_ids_0.append(EOS_TOKEN_ID)
+        token_ids_0.insert(0, BOS_TOKEN_ID)
         return token_ids_0
 
     def _encode(self, texts: list[TextInput], add_special_tokens: bool) -> list[bytes]:
-        """Fast path: encode texts with optional special tokens using string concatenation."""
+        encoding = self.encoding
         if add_special_tokens:
             texts = [BOS_TOKEN + text + EOS_TOKEN for text in texts]
-        return [text.encode("utf-8") for text in texts]
+        return [text.encode(encoding) for text in texts]
 
     def _encode_and_truncate(
-            self, texts: list[TextInput], max_length: int, add_special_tokens: bool
+        self, texts: list[TextInput], max_length: int, add_special_tokens: bool
     ) -> list[bytes]:
-        """Encode and truncate texts. Uses bytes slicing + concat (faster than bytearray)."""
+        encoding, bytes_per_unit, eos_encoded = self.encoding, self._bytes_per_unit, self._eos_encoded
+        # Convert from token count to byte count for slicing
+        max_length *= bytes_per_unit
         if add_special_tokens:
-            # Prepend BOS via string concat, truncate, concat EOS byte
-            return [(BOS_TOKEN + text).encode("utf-8")[:max_length + 1] + EOS_BYTE for text in texts]
-        return [text.encode("utf-8")[:max_length] for text in texts]
+            # Include BOS token in the slice, then append EOS
+            max_length += bytes_per_unit
+            return [(BOS_TOKEN + text).encode(encoding)[:max_length] + eos_encoded for text in texts]
+        return [text.encode(encoding)[:max_length] for text in texts]
 
     def _original_call(self, *args, **kwargs) -> BatchEncoding:
         return super().__call__(*args, **kwargs)
@@ -135,13 +152,13 @@ class UTF8Tokenizer(PreTrainedTokenizer):
         return result._asdict()
 
     def torch(
-            self,
-            texts: list[TextInput],
-            add_special_tokens: bool = True,
-            padding: bool = False,
-            truncation: bool = False,
-            max_length: int | None = None,
-            device: torch.device | None = None,
+        self,
+        texts: list[TextInput],
+        add_special_tokens: bool = True,
+        padding: bool = False,
+        truncation: bool = False,
+        max_length: int | None = None,
+        device: torch.device | None = None,
     ) -> TokenizerResult:
         if truncation:
             if max_length is None:
@@ -159,24 +176,22 @@ class UTF8Tokenizer(PreTrainedTokenizer):
                         stacklevel=2)
                     truncation = False
 
-        # Encode
         if truncation:
             input_bytes = self._encode_and_truncate(texts, max_length, add_special_tokens)
         else:
             input_bytes = self._encode(texts, add_special_tokens)
 
+        dtype = self.dtype
         if padding:
-            # Fast path: pre-allocate and fill directly
-            input_ids = pad_bytearrays_to_tensor(input_bytes, padding_value=PAD_TOKEN_ID)
+            input_ids = pad_bytearrays_to_tensor(input_bytes, dtype, PAD_TOKEN_ID)
             attention_mask = input_ids.ne(PAD_TOKEN_ID)
         else:
             # Slow path - no padding means we need to return a list of tensors
             # bytearray() needed because bytes are immutable -> read-only tensor warning
-            input_ids = [torch.frombuffer(bytearray(ids), dtype=torch.uint8) for ids in input_bytes]
+            input_ids = [torch.frombuffer(bytearray(b), dtype=dtype) for b in input_bytes]
             attention_mask = [torch.ones(len(ids), dtype=torch.bool) for ids in input_ids]
 
-        # IDs should be long tensors if embedding doesn't support uint8
-        if not EMBEDDING_SUPPORTS_uINT8:
+        if not is_embedding_dtype_supported(dtype):
             if isinstance(input_ids, list):
                 input_ids = [ids.long() for ids in input_ids]
             else:
@@ -199,4 +214,25 @@ class UTF8Tokenizer(PreTrainedTokenizer):
         return {}
 
 
+class UTF8Tokenizer(UTFTokenizer):
+    encoding = "utf-8"
+    dtype = torch.uint8
+
+
+# System-dependent, but token IDs remain the same across systems (encoding and decoding use matching byte order)
+ENDIAN_SUFFIX = "le" if sys.byteorder == "little" else "be"
+
+
+class UTF16Tokenizer(UTFTokenizer):
+    encoding = f"utf-16-{ENDIAN_SUFFIX}"
+    dtype = torch.uint16
+
+
+class UTF32Tokenizer(UTFTokenizer):
+    encoding = f"utf-32-{ENDIAN_SUFFIX}"
+    dtype = torch.uint32
+
+
 AutoTokenizer.register(UTF8Tokenizer, slow_tokenizer_class=UTF8Tokenizer)
+AutoTokenizer.register(UTF16Tokenizer, slow_tokenizer_class=UTF16Tokenizer)
+AutoTokenizer.register(UTF32Tokenizer, slow_tokenizer_class=UTF32Tokenizer)

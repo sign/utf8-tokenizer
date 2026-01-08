@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as functional
 
-from utf8_tokenizer.embeddings import PatchedBitEmbeddings
+from utf8_tokenizer.byte_embeddings import PatchedBitEmbeddings
 
 
 def is_leading_byte(byte: int) -> bool:
