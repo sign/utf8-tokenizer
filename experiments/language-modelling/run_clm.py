@@ -67,6 +67,7 @@ from transformers.utils.versions import require_version
 
 from utf8_tokenizer.byt5_comparison import ByT5ComparableTokenizer
 from utf8_tokenizer.embeddings import patch_embedding_layers
+from utf8_tokenizer.groups.causal_lm import GroupedCausalLMConfig, GroupedCausalLMWrapper
 from utf8_tokenizer.tokenizer import UTF8Tokenizer
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -124,6 +125,10 @@ class ModelArguments:
     use_bit_embeddings: bool = field(
         default=False,
         metadata={"help": "Whether to use bit embeddings."},
+    )
+    group_bytes: bool = field(
+        default=False,
+        metadata={"help": "Whether to use grouped byte embeddings (wraps model with GroupedCausalLMWrapper)."},
     )
     model_revision: str = field(
         default="main",
@@ -502,6 +507,11 @@ def main():
 
     if model_args.use_bit_embeddings:
         patch_embedding_layers(model)
+
+    if model_args.group_bytes:
+        # Create config and wrap model with GroupedCausalLMWrapper
+        grouped_config = GroupedCausalLMConfig(base_model_name_or_path=model_args.model_name_or_path)
+        model = GroupedCausalLMWrapper(config=grouped_config, model=model, tokenizer=tokenizer)
 
     # Preprocessing the datasets.
     # First we tokenize all the texts.

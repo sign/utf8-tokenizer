@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from transformers import PreTrainedModel
+from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
 
 from utf8_tokenizer import UTF8Tokenizer
@@ -13,8 +14,24 @@ from utf8_tokenizer import UTF8Tokenizer
 from .embedding import UTF8GroupedEmbedding
 from .group_utf8_bytes import group_utf8_bytes
 
+logger = logging.getLogger(__name__)
 
-class CausalLMWrapper(nn.Module):
+
+class GroupedCausalLMConfig(PretrainedConfig):
+    """Configuration class for GroupedCausalLMWrapper.
+
+    Args:
+        base_model_name_or_path: Name or path of the base CausalLM model.
+        **kwargs: Additional config parameters.
+    """
+    model_type = "grouped_causal_lm"
+
+    def __init__(self, base_model_name_or_path: str | None = None, **kwargs):
+        super().__init__(**kwargs)
+        self.base_model_name_or_path = base_model_name_or_path
+
+
+class GroupedCausalLMWrapper(PreTrainedModel):
     """
     Wraps a CausalLM to work with UTF-8 grouped byte sequences.
 
@@ -22,15 +39,32 @@ class CausalLMWrapper(nn.Module):
     and provides autoregressive generation with KV-cache support.
 
     Args:
-        model: A HuggingFace CausalLM model (hidden_size must be divisible by 4).
-        tokenizer: UTF8Tokenizer for encoding/decoding bytes.
+        config: GroupedCausalLMConfig with base model configuration.
+        model: Optional pre-loaded HuggingFace CausalLM model. If not provided,
+            will be loaded from config.base_model_name_or_path.
+        tokenizer: Optional UTF8Tokenizer. If not provided during save/load,
+            a new instance will be created.
     """
+    config_class = GroupedCausalLMConfig
+    base_model_prefix = "grouped_causal_lm"
+    supports_gradient_checkpointing = True
 
-    def __init__(self, model: PreTrainedModel, tokenizer: UTF8Tokenizer):
-        super().__init__()
+    def __init__(
+        self,
+        config: GroupedCausalLMConfig,
+        model: PreTrainedModel | None = None,
+        tokenizer: UTF8Tokenizer | None = None,
+    ):
+        super().__init__(config)
+
+        # Load base model if not provided
+        if model is None:
+            if config.base_model_name_or_path is None:
+                raise ValueError("Either model or config.base_model_name_or_path must be provided")
+            model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
+
         self.model = model
-        self.tokenizer = tokenizer
-        self.config = model.config
+        self.tokenizer = tokenizer or UTF8Tokenizer()
 
         hidden_size = model.config.hidden_size
         if hidden_size % 4 != 0:
@@ -41,6 +75,18 @@ class CausalLMWrapper(nn.Module):
         self.model.resize_token_embeddings(hidden_size)
 
         self.utf8_embedding = UTF8GroupedEmbedding(embedding_size=hidden_size)
+
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        """Enable gradient checkpointing on the underlying model."""
+        self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+
+    def gradient_checkpointing_disable(self):
+        """Disable gradient checkpointing on the underlying model."""
+        self.model.gradient_checkpointing_disable()
+
+    def get_input_embeddings(self):
+        """Return the input embedding layer."""
+        return self.utf8_embedding
 
     def forward(
         self,
@@ -165,8 +211,25 @@ class CausalLMWrapper(nn.Module):
         return result
 
     @torch.inference_mode()
-    def generate(self, input_ids: torch.Tensor, max_new_groups: int = 50) -> list[torch.Tensor]:
-        """Generate bytes autoregressively using greedy decoding with KV cache."""
+    def generate(self, input_ids: torch.Tensor,
+                 attention_mask: torch.Tensor | None = None,
+                 max_new_tokens: int = 50,
+                 **kwargs) -> list[torch.Tensor]:
+        """Generate bytes autoregressively using greedy decoding with KV cache.
+
+        Args:
+            input_ids: Input byte sequences.
+            attention_mask: Ignored. Provided for compatibility with HuggingFace's generate API.
+            max_new_tokens: Maximum number of groups to generate.
+            **kwargs: Additional arguments (ignored, for compatibility).
+        """
+        if attention_mask is not None:
+            logger.warning("attention_mask is provided but will be ignored. "
+                         "GroupedCausalLMWrapper computes attention masks internally.")
+
+        if kwargs:
+            logger.warning(f"Ignoring additional generate arguments: {list(kwargs.keys())}")
+
         eos_token_id = self.tokenizer.eos_token_id
         batch_size = input_ids.shape[0]
         device = input_ids.device
@@ -176,7 +239,7 @@ class CausalLMWrapper(nn.Module):
         seq_lens = self._get_seq_lens(grouped)
 
         # Pre-allocate full mask buffer (prefill + max decode steps)
-        full_mask = torch.ones(batch_size, num_groups + max_new_groups, device=device, dtype=torch.long)
+        full_mask = torch.ones(batch_size, num_groups + max_new_tokens, device=device, dtype=torch.long)
 
         past_key_values, next_group, current_pos, prefill_mask = self._prefill(grouped, seq_lens)
         # Copy prefill mask into buffer
@@ -186,7 +249,7 @@ class CausalLMWrapper(nn.Module):
         generated = [next_group]
         done = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
-        for _ in range(max_new_groups - 1):
+        for _ in range(max_new_tokens - 1):
             done = done | (next_group == eos_token_id).any(dim=-1)
             if done.all():
                 break
@@ -199,3 +262,29 @@ class CausalLMWrapper(nn.Module):
             generated.append(next_group)
 
         return self._flatten_output(grouped, generated, eos_token_id)
+
+    @classmethod
+    def from_base_model(
+        cls,
+        base_model_name_or_path: str,
+        tokenizer: UTF8Tokenizer | None = None,
+        **kwargs,
+    ) -> "GroupedCausalLMWrapper":
+        """Create a GroupedCausalLMWrapper from a base model name/path.
+
+        Args:
+            base_model_name_or_path: Name or path of the base CausalLM model.
+            tokenizer: Optional UTF8Tokenizer instance.
+            **kwargs: Additional arguments passed to from_pretrained for the base model.
+
+        Returns:
+            GroupedCausalLMWrapper instance.
+        """
+        config = GroupedCausalLMConfig(base_model_name_or_path=base_model_name_or_path)
+        model = AutoModelForCausalLM.from_pretrained(base_model_name_or_path, **kwargs)
+        return cls(config=config, model=model, tokenizer=tokenizer)
+
+
+# Register the config and model with AutoConfig and AutoModelForCausalLM
+AutoConfig.register("grouped_causal_lm", GroupedCausalLMConfig)
+AutoModelForCausalLM.register(GroupedCausalLMConfig, GroupedCausalLMWrapper)

@@ -1,14 +1,14 @@
-"""Tests for CausalLMWrapper."""
+"""Tests for GroupedCausalLMWrapper."""
 
 import pytest
 import torch
 
 from utf8_tokenizer import UTF8Tokenizer
-from utf8_tokenizer.groups import CausalLMWrapper
+from utf8_tokenizer.groups import GroupedCausalLMConfig, GroupedCausalLMWrapper
 
 
-class TestCausalLMWrapperUnit:
-    """Unit tests for CausalLMWrapper without loading a real model."""
+class TestGroupedCausalLMWrapperUnit:
+    """Unit tests for GroupedCausalLMWrapper without loading a real model."""
 
     def test_init_invalid_hidden_size(self):
         """Test that non-divisible-by-4 hidden sizes raise error."""
@@ -22,8 +22,9 @@ class TestCausalLMWrapperUnit:
             def resize_token_embeddings(self, size):
                 pass
 
+        config = GroupedCausalLMConfig(base_model_name_or_path="dummy")
         with pytest.raises(ValueError, match="must be divisible by 4"):
-            CausalLMWrapper(MockModel(), UTF8Tokenizer())
+            GroupedCausalLMWrapper(config, model=MockModel(), tokenizer=UTF8Tokenizer())
 
     def test_flatten_output_simple(self):
         """Test _flatten_output with simple input."""
@@ -33,7 +34,7 @@ class TestCausalLMWrapperUnit:
         generated = [torch.tensor([[0, 0, 0, 33]])]  # "!"
         eos_token_id = 2
 
-        result = CausalLMWrapper._flatten_output(grouped, generated, eos_token_id)
+        result = GroupedCausalLMWrapper._flatten_output(grouped, generated, eos_token_id)
 
         assert len(result) == 1
         assert result[0].tolist() == [72, 105, 33]  # "Hi!"
@@ -49,7 +50,7 @@ class TestCausalLMWrapperUnit:
         ]
         eos_token_id = 2
 
-        result = CausalLMWrapper._flatten_output(grouped, generated, eos_token_id)
+        result = GroupedCausalLMWrapper._flatten_output(grouped, generated, eos_token_id)
 
         assert len(result) == 1
         assert result[0].tolist() == [72, 105, 2]  # Stops at EOS
@@ -63,7 +64,7 @@ class TestCausalLMWrapperUnit:
         generated = [torch.tensor([[0, 0, 0, 49], [0, 0, 0, 50]])]  # "1", "2"
         eos_token_id = 2
 
-        result = CausalLMWrapper._flatten_output(grouped, generated, eos_token_id)
+        result = GroupedCausalLMWrapper._flatten_output(grouped, generated, eos_token_id)
 
         assert len(result) == 2
         assert result[0].tolist() == [65, 49]  # Zeros removed
@@ -76,7 +77,7 @@ class TestCausalLMWrapperUnit:
         generated = [torch.tensor([[0, 0, 0, 33]])]  # "!"
         eos_token_id = 2
 
-        result = CausalLMWrapper._flatten_output(grouped, generated, eos_token_id)
+        result = GroupedCausalLMWrapper._flatten_output(grouped, generated, eos_token_id)
 
         assert len(result) == 1
         assert result[0].tolist() == [195, 169, 33]
@@ -90,7 +91,7 @@ class TestCausalLMWrapperUnit:
             [[0, 0, 0, 65], [0, 0, 0, 0]],  # batch 0: ASCII 'A', then padding
         ])
 
-        # The mask logic from CausalLMWrapper.forward
+        # The mask logic from GroupedCausalLMWrapper.forward
         valid_groups = (shifted_labels != 0).any(dim=-1)
 
         # First group should be valid (has non-zero byte)
@@ -120,7 +121,7 @@ class TestCausalLMWrapperUnit:
 
 
 @pytest.mark.slow
-class TestCausalLMWrapperIntegration:
+class TestGroupedCausalLMWrapperIntegration:
     """Integration tests with real model (requires network/model download)."""
 
     @pytest.fixture(scope="class")
@@ -131,10 +132,7 @@ class TestCausalLMWrapperIntegration:
     @pytest.fixture(scope="class")
     def wrapper(self, tokenizer):
         """Load model and create wrapper once for all tests."""
-        from transformers import AutoModelForCausalLM
-
-        model = AutoModelForCausalLM.from_pretrained("sign/utf8-lm-tiny")
-        return CausalLMWrapper(model, tokenizer)
+        return GroupedCausalLMWrapper.from_base_model("sign/utf8-lm-tiny", tokenizer=tokenizer)
 
     def test_forward_shape(self, wrapper, tokenizer):
         """Test forward pass produces correct output shapes."""
@@ -168,7 +166,7 @@ class TestCausalLMWrapperIntegration:
         encoded = tokenizer.torch(texts, padding=True)
         input_ids = encoded.input_ids
 
-        generated = wrapper.generate(input_ids, max_new_groups=5)
+        generated = wrapper.generate(input_ids, max_new_tokens=5)
 
         assert isinstance(generated, list)
         assert len(generated) == 1
@@ -180,7 +178,7 @@ class TestCausalLMWrapperIntegration:
         encoded = tokenizer.torch(texts, padding=True)
         input_ids = encoded.input_ids
 
-        generated = wrapper.generate(input_ids, max_new_groups=100)
+        generated = wrapper.generate(input_ids, max_new_tokens=100)
 
         # Should have generated something
         assert len(generated) == 1
@@ -192,7 +190,7 @@ class TestCausalLMWrapperIntegration:
         encoded = tokenizer.torch(texts, padding=True)
         input_ids = encoded.input_ids
 
-        generated = wrapper.generate(input_ids, max_new_groups=3)
+        generated = wrapper.generate(input_ids, max_new_tokens=3)
 
         assert len(generated) == 2  # batch size preserved
 
@@ -202,7 +200,7 @@ class TestCausalLMWrapperIntegration:
         encoded = tokenizer.torch(texts, padding=True)
         input_ids = encoded.input_ids
 
-        generated = wrapper.generate(input_ids, max_new_groups=5)
+        generated = wrapper.generate(input_ids, max_new_tokens=5)
 
         # Decode back to text (should not raise)
         generated_bytes = bytes(generated[0].tolist())
@@ -233,12 +231,12 @@ class TestCausalLMWrapperIntegration:
         assert outputs.logits.ndim == 4
 
     def test_generate_single_group(self, wrapper, tokenizer):
-        """Test generation with max_new_groups=1."""
+        """Test generation with max_new_tokens=1."""
         texts = ["Hi"]
         encoded = tokenizer.torch(texts, padding=True)
         input_ids = encoded.input_ids
 
-        generated = wrapper.generate(input_ids, max_new_groups=1)
+        generated = wrapper.generate(input_ids, max_new_tokens=1)
 
         assert len(generated) == 1
         # Should have input bytes plus at least one generated group
@@ -313,6 +311,72 @@ class TestCausalLMWrapperIntegration:
         assert torch.allclose(batched_long_logits, individual_long_logits, atol=1e-5), \
             "Batched logits for long sequence don't match individual prediction"
 
+    def test_save_pretrained(self, wrapper, tokenizer, tmp_path):
+        """Test that save_pretrained saves the model correctly."""
+        save_dir = tmp_path / "saved_model"
+        wrapper.save_pretrained(save_dir)
+
+        # Check that config was saved
+        assert (save_dir / "config.json").exists()
+        # Check that model weights were saved
+        assert (save_dir / "pytorch_model.bin").exists() or (save_dir / "model.safetensors").exists()
+
+    def test_load_pretrained(self, wrapper, tokenizer, tmp_path):
+        """Test that load_pretrained loads the model correctly."""
+        save_dir = tmp_path / "saved_model"
+        wrapper.save_pretrained(save_dir)
+
+        # Load the model
+        loaded_wrapper = GroupedCausalLMWrapper.from_pretrained(save_dir)
+
+        # Check that loaded model has correct attributes
+        assert loaded_wrapper.config.base_model_name_or_path == wrapper.config.base_model_name_or_path
+        assert loaded_wrapper.utf8_embedding.embedding_size == wrapper.utf8_embedding.embedding_size
+
+    def test_save_load_preserves_weights(self, wrapper, tokenizer, tmp_path):
+        """Test that save and load preserves model weights."""
+        save_dir = tmp_path / "saved_model"
+        wrapper.save_pretrained(save_dir)
+
+        # Load the model
+        loaded_wrapper = GroupedCausalLMWrapper.from_pretrained(save_dir)
+
+        # Compare outputs - should be identical
+        texts = ["Hello world"]
+        encoded = tokenizer.torch(texts, padding=True)
+        input_ids = encoded.input_ids
+
+        with torch.no_grad():
+            original_output = wrapper(input_ids)
+            loaded_output = loaded_wrapper(input_ids)
+
+        assert torch.allclose(original_output.logits, loaded_output.logits, atol=1e-5), \
+            "Loaded model produces different outputs than original"
+
+    def test_load_with_automodel(self, wrapper, tokenizer, tmp_path):
+        """Test that the model can be loaded with AutoModelForCausalLM."""
+        from transformers import AutoModelForCausalLM
+
+        save_dir = tmp_path / "saved_model"
+        wrapper.save_pretrained(save_dir)
+
+        # Load using AutoModelForCausalLM
+        loaded_wrapper = AutoModelForCausalLM.from_pretrained(save_dir)
+
+        # Check that it's the right type
+        assert isinstance(loaded_wrapper, GroupedCausalLMWrapper)
+
+        # Compare outputs
+        texts = ["Test"]
+        encoded = tokenizer.torch(texts, padding=True)
+        input_ids = encoded.input_ids
+
+        with torch.no_grad():
+            original_output = wrapper(input_ids)
+            loaded_output = loaded_wrapper(input_ids)
+
+        assert torch.allclose(original_output.logits, loaded_output.logits, atol=1e-5)
+
     def test_batched_generate_matches_individual(self, wrapper, tokenizer):
         """Test that batched generation with padding produces same output as individual generation."""
         # Two sequences of different lengths
@@ -323,12 +387,12 @@ class TestCausalLMWrapperIntegration:
         short_ids = tokenizer.torch([short_text], padding=True).input_ids
         long_ids = tokenizer.torch([long_text], padding=True).input_ids
 
-        gen_short_individual = wrapper.generate(short_ids, max_new_groups=5)
-        gen_long_individual = wrapper.generate(long_ids, max_new_groups=5)
+        gen_short_individual = wrapper.generate(short_ids, max_new_tokens=5)
+        gen_long_individual = wrapper.generate(long_ids, max_new_tokens=5)
 
         # Run batched
         batched_ids = tokenizer.torch([short_text, long_text], padding=True).input_ids
-        gen_batched = wrapper.generate(batched_ids, max_new_groups=5)
+        gen_batched = wrapper.generate(batched_ids, max_new_tokens=5)
 
         # Compare outputs - should be identical
         assert gen_batched[0].tolist() == gen_short_individual[0].tolist(), (

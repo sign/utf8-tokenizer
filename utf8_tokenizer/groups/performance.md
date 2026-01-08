@@ -1,6 +1,6 @@
-# CausalLMWrapper Performance
+# GroupedCausalLMWrapper Performance
 
-Performance comparison between `CausalLMWrapper` and the base `AutoModelForCausalLM`.
+Performance comparison between `GroupedCausalLMWrapper` and the base `AutoModelForCausalLM`.
 
 ## Test Setup
 
@@ -11,7 +11,7 @@ Performance comparison between `CausalLMWrapper` and the base `AutoModelForCausa
 
 ## How It Works
 
-`CausalLMWrapper` groups UTF-8 bytes into 4-byte chunks, reducing sequence length:
+`GroupedCausalLMWrapper` groups UTF-8 bytes into 4-byte chunks, reducing sequence length:
 
 | Text Type      | Bytes/Char | Compression |
 |----------------|------------|-------------|
