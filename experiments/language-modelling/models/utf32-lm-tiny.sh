@@ -1,16 +1,16 @@
 export WANDB_PROJECT="utf8"
-export WANDB_NAME="tiny-lm-fineweb"
+export WANDB_NAME="tiny-lm-fineweb-utf32"
 
-# tiny-lm using utf8 contains 3m parameters
+# tiny-lm using utf32 contains 3m parameters
 # Chinchilla scaling law optimal number of tokens is 20x number of parameters
 # So for 3.2m parameters, we want to train on 64m tokens
 # But! this was calculated for models with standard embeddings, so assuming 16m parameters,
 # instead, we train on (128 batch size * 256 block size * 10,000 steps) = 327m tokens
 
 python run_clm.py \
-  --encoding utf8 \
+  --encoding utf32 \
   --use_bit_embeddings True \
-  --output_dir ./output-tiny-lm-fineweb \
+  --output_dir ./output-tiny-lm-fineweb-utf32 \
   --dataset_name HuggingFaceFW/fineweb \
   --streaming True \
   --dataloader_num_workers 1 \
@@ -24,7 +24,7 @@ python run_clm.py \
   --save_total_limit 1 \
   --logging_steps 100 \
   --logging_strategy steps \
-  --model_name_or_path sbintuitions/tiny-lm \
+  --model_name_or_path sign/utf8-lm-tiny \
   --per_device_train_batch_size 256 \
   --block_size 256 \
   --optim adamw_torch_fused \
@@ -41,4 +41,4 @@ python run_clm.py \
   --report_to wandb \
   --include_num_input_tokens_seen True
 
-# hf upload sign/utf8-lm-tiny . .
+# hf upload sign/utf32-lm-tiny . .

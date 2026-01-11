@@ -33,7 +33,6 @@ train = [
 [tool.setuptools]
 packages = [
     "utf8_tokenizer",
-    "utf8_tokenizer.groups",
 ]
 
 [tool.setuptools.package-data]
@@ -63,3 +62,6 @@ select = [
 [tool.pytest.ini_options]
 addopts = "-v"
 testpaths = ["utf8_tokenizer", "tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]

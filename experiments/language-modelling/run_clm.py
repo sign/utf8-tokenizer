@@ -67,8 +67,8 @@ from transformers.utils.versions import require_version
 
 from utf8_tokenizer.byt5_comparison import ByT5ComparableTokenizer
 from utf8_tokenizer.byte_embeddings import patch_embedding_layers
-from utf8_tokenizer.groups.causal_lm import GroupedCausalLMConfig, GroupedCausalLMWrapper
-from utf8_tokenizer.tokenizer import UTF8Tokenizer
+from utf8_tokenizer.char_causal_lm import CharacterCausalLMConfig, CharacterCausalLMWrapper
+from utf8_tokenizer.tokenizer import UTF8Tokenizer, UTF16Tokenizer, UTF32Tokenizer
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 # check_min_version("4.57.0.dev0")
@@ -126,9 +126,13 @@ class ModelArguments:
         default=False,
         metadata={"help": "Whether to use bit embeddings."},
     )
-    group_bytes: bool = field(
-        default=False,
-        metadata={"help": "Whether to use grouped byte embeddings (wraps model with GroupedCausalLMWrapper)."},
+    encoding: str = field(
+        default="utf8",
+        metadata={
+            "help": "Encoding to use for tokenization: utf8, utf16, or utf32. "
+                    "utf16/utf32 use character-level embeddings with CharacterCausalLMWrapper.",
+            "choices": ["utf8", "utf16", "utf32"],
+        },
     )
     model_revision: str = field(
         default="main",
@@ -480,7 +484,14 @@ def main():
                     "You can do it from another script, save it, and load it from here, using --tokenizer_name."
                 )
     else:
-        tokenizer = UTF8Tokenizer()
+        if model_args.encoding == "utf8":
+            tokenizer = UTF8Tokenizer()
+        elif model_args.encoding == "utf16":
+            tokenizer = UTF16Tokenizer()
+        elif model_args.encoding == "utf32":
+            tokenizer = UTF32Tokenizer()
+        else:
+            raise ValueError(f"Unknown encoding: {model_args.encoding}")
 
     if model_args.model_name_or_path:
         dtype = model_args.dtype if model_args.dtype in ["auto", None] else getattr(torch, model_args.dtype)
@@ -508,10 +519,13 @@ def main():
     if model_args.use_bit_embeddings:
         patch_embedding_layers(model)
 
-    if model_args.group_bytes:
-        # Create config and wrap model with GroupedCausalLMWrapper
-        grouped_config = GroupedCausalLMConfig(base_model_name_or_path=model_args.model_name_or_path)
-        model = GroupedCausalLMWrapper(config=grouped_config, model=model, tokenizer=tokenizer)
+    if model_args.encoding in ["utf16", "utf32"]:
+        num_bytes = 2 if model_args.encoding == "utf16" else 4
+        char_config = CharacterCausalLMConfig(
+            base_model_name_or_path=model_args.model_name_or_path,
+            num_bytes=num_bytes,
+        )
+        model = CharacterCausalLMWrapper(config=char_config, model=model, tokenizer=tokenizer)
 
     # Preprocessing the datasets.
     # First we tokenize all the texts.
