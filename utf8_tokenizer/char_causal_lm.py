@@ -27,14 +27,20 @@ class CharacterCausalLMConfig(PretrainedConfig):
     model_type = "character_causal_lm"
 
     def __init__(
-        self,
-        base_model_name_or_path: str | None = None,
-        num_bytes: int = 2,
-        **kwargs,
+            self,
+            base_model_name_or_path: str | None = None,
+            num_bytes: int = 2,
+            **kwargs,
     ):
         super().__init__(**kwargs)
         self.base_model_name_or_path = base_model_name_or_path
         self.num_bytes = num_bytes
+
+        if base_model_name_or_path is not None:
+            config = AutoConfig.from_pretrained(base_model_name_or_path)
+            for key, value in config.to_dict().items():
+                if not hasattr(self, key):
+                    setattr(self, key, value)
 
 
 class CharacterCausalLMWrapper(PreTrainedModel):
@@ -57,9 +63,9 @@ class CharacterCausalLMWrapper(PreTrainedModel):
     supports_gradient_checkpointing = True
 
     def __init__(
-        self,
-        config: CharacterCausalLMConfig,
-        model: PreTrainedModel | None = None,
+            self,
+            config: CharacterCausalLMConfig,
+            model: PreTrainedModel | None = None,
     ):
         super().__init__(config)
 
@@ -81,7 +87,6 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         # We resize so that we can access logits
         self.model.resize_token_embeddings(hidden_size)
 
-
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
         """Enable gradient checkpointing on the underlying model."""
         self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
@@ -95,12 +100,12 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         return self.char_embedding
 
     def forward(
-        self,
-        input_ids: torch.Tensor | None = None,
-        attention_mask: torch.Tensor | None = None,
-        labels: torch.Tensor | None = None,
-        inputs_embeds: torch.Tensor | None = None,
-        **kwargs,
+            self,
+            input_ids: torch.Tensor | None = None,
+            attention_mask: torch.Tensor | None = None,
+            labels: torch.Tensor | None = None,
+            inputs_embeds: torch.Tensor | None = None,
+            **kwargs,
     ) -> CausalLMOutput:
         if inputs_embeds is None:
             if input_ids is None:
@@ -147,10 +152,10 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         )
 
     def _prefill(
-        self,
-        input_ids: torch.Tensor | None,
-        attention_mask: torch.Tensor | None,
-        inputs_embeds: torch.Tensor | None = None,
+            self,
+            input_ids: torch.Tensor | None,
+            attention_mask: torch.Tensor | None,
+            inputs_embeds: torch.Tensor | None = None,
     ) -> tuple:
         """Run initial forward pass, return (past_key_values, first_token, positions)."""
         if inputs_embeds is not None:
@@ -190,11 +195,11 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         return outputs.past_key_values, first_token, current_pos
 
     def _decode_step(
-        self,
-        next_token: torch.Tensor,
-        past_key_values: tuple,
-        current_pos: torch.Tensor,
-        decode_mask: torch.Tensor,
+            self,
+            next_token: torch.Tensor,
+            past_key_values: tuple,
+            current_pos: torch.Tensor,
+            decode_mask: torch.Tensor,
     ) -> tuple:
         """Run single decode step with KV cache, return (past_key_values, next_token)."""
         embeds = self.char_embedding.encode(next_token.unsqueeze(1))
@@ -213,9 +218,9 @@ class CharacterCausalLMWrapper(PreTrainedModel):
 
     @staticmethod
     def _truncate_at_eos(
-        input_ids: torch.Tensor,
-        generated: list[torch.Tensor],
-        eos_token_id: int = EOS_TOKEN_ID,
+            input_ids: torch.Tensor,
+            generated: list[torch.Tensor],
+            eos_token_id: int = EOS_TOKEN_ID,
     ) -> list[torch.Tensor]:
         """Concatenate input and generated, truncate at EOS, remove padding."""
         batch_size, input_len = input_ids.shape
@@ -234,8 +239,8 @@ class CharacterCausalLMWrapper(PreTrainedModel):
 
     @staticmethod
     def _truncate_generated_at_eos(
-        generated: list[torch.Tensor],
-        eos_token_id: int = EOS_TOKEN_ID,
+            generated: list[torch.Tensor],
+            eos_token_id: int = EOS_TOKEN_ID,
     ) -> list[torch.Tensor]:
         """Truncate generated tokens at EOS, remove padding."""
         gen_stacked = torch.stack(generated, dim=1)
@@ -250,12 +255,12 @@ class CharacterCausalLMWrapper(PreTrainedModel):
 
     @torch.inference_mode()
     def generate(
-        self,
-        input_ids: torch.Tensor | None = None,
-        attention_mask: torch.Tensor | None = None,
-        inputs_embeds: torch.Tensor | None = None,
-        max_new_tokens: int = 50,
-        **kwargs,
+            self,
+            input_ids: torch.Tensor | None = None,
+            attention_mask: torch.Tensor | None = None,
+            inputs_embeds: torch.Tensor | None = None,
+            max_new_tokens: int = 50,
+            **kwargs,
     ) -> list[torch.Tensor]:
         """Generate tokens autoregressively using greedy decoding with KV cache.
 
@@ -317,10 +322,10 @@ class CharacterCausalLMWrapper(PreTrainedModel):
 
     @classmethod
     def from_base_model(
-        cls,
-        base_model_name_or_path: str,
-        num_bytes: int = 2,
-        **kwargs,
+            cls,
+            base_model_name_or_path: str,
+            num_bytes: int = 2,
+            **kwargs,
     ) -> CharacterCausalLMWrapper:
         """Create a CharacterCausalLMWrapper from a base model name/path.
 
