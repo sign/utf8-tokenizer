@@ -15,6 +15,7 @@ class TestCharacterCausalLMWrapperUnit:
         config = CharacterCausalLMConfig(
             base_model_name_or_path="test/model",
             num_bytes=2,
+            load_base_config=False,
         )
         assert config.base_model_name_or_path == "test/model"
         assert config.num_bytes == 2
@@ -37,7 +38,7 @@ class TestCharacterCausalLMWrapperUnit:
             def resize_token_embeddings(self, size):
                 pass
 
-        config = CharacterCausalLMConfig(base_model_name_or_path="dummy", num_bytes=2)
+        config = CharacterCausalLMConfig(base_model_name_or_path="dummy", num_bytes=2, load_base_config=False)
         with pytest.raises(ValueError, match="must be divisible by 2"):
             CharacterCausalLMWrapper(config, model=MockModel())
 
@@ -53,7 +54,7 @@ class TestCharacterCausalLMWrapperUnit:
             def resize_token_embeddings(self, size):
                 pass
 
-        config = CharacterCausalLMConfig(base_model_name_or_path="dummy", num_bytes=4)
+        config = CharacterCausalLMConfig(base_model_name_or_path="dummy", num_bytes=4, load_base_config=False)
         with pytest.raises(ValueError, match="must be divisible by 4"):
             CharacterCausalLMWrapper(config, model=MockModel())
 

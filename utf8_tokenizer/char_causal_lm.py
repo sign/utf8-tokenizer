@@ -30,13 +30,14 @@ class CharacterCausalLMConfig(PretrainedConfig):
             self,
             base_model_name_or_path: str | None = None,
             num_bytes: int = 2,
+            load_base_config: bool = True,
             **kwargs,
     ):
         super().__init__(**kwargs)
         self.base_model_name_or_path = base_model_name_or_path
         self.num_bytes = num_bytes
 
-        if base_model_name_or_path is not None:
+        if load_base_config and base_model_name_or_path is not None:
             config = AutoConfig.from_pretrained(base_model_name_or_path)
             for key, value in config.to_dict().items():
                 if not hasattr(self, key):

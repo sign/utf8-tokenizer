@@ -389,9 +389,9 @@ class TestCharacterEmbeddingGeneral:
         assert torch.all(decoded == tokens)
 
     def test_edge_case_max_values_utf32(self):
-        """Test with maximum UTF-32 values."""
+        """Test with maximum valid UTF-32 values (Unicode codepoints <= 0x10FFFF)."""
         layer = CharacterEmbedding(embedding_size=256, num_bytes=4)
-        tokens = torch.tensor([[0x00000000, 0x0010FFFF, 0x7FFFFFFF, 0x00FFFFFF]])
+        tokens = torch.tensor([[0x00000000, 0x0010FFFF, 0x0001F600, 0x00000041]])
 
         encoded = layer.encode(tokens)
         decoded, _ = layer.decode(encoded)
