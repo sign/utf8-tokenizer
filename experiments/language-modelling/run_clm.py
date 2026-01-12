@@ -513,19 +513,24 @@ def main():
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
     embedding_size = model.get_input_embeddings().weight.shape[0]
-    # if len(tokenizer) > embedding_size:
-    model.resize_token_embeddings(len(tokenizer))
+    if len(tokenizer) != embedding_size:
+        model.resize_token_embeddings(len(tokenizer))
 
     if model_args.use_bit_embeddings:
         patch_embedding_layers(model)
 
     if model_args.encoding in ["utf16", "utf32"]:
         num_bytes = 2 if model_args.encoding == "utf16" else 4
-        char_config = CharacterCausalLMConfig(
-            base_model_name_or_path=model_args.model_name_or_path,
-            num_bytes=num_bytes,
-        )
-        model = CharacterCausalLMWrapper(config=char_config, model=model, tokenizer=tokenizer)
+
+        if isinstance(model, CharacterCausalLMWrapper):
+            # Should not wrap again
+            assert num_bytes == model.config.num_bytes
+        else:
+            char_config = CharacterCausalLMConfig(
+                base_model_name_or_path=model_args.model_name_or_path,
+                num_bytes=num_bytes,
+            )
+            model = CharacterCausalLMWrapper(config=char_config, model=model)
 
     # Preprocessing the datasets.
     # First we tokenize all the texts.

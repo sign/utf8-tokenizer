@@ -6,7 +6,8 @@ from utf8_tokenizer.char_causal_lm import CharacterCausalLMWrapper
 from utf8_tokenizer import UTF8Tokenizer
 
 # model_id = "sign/utf8-lm-tiny"
-model_id = "sign/utf32-lm-tiny"
+model_id = "sign/utf16-lm-tiny"
+# model_id = "sign/utf32-lm-tiny"
 
 tokenizer = UTF8Tokenizer()
 model = AutoModelForCausalLM.from_pretrained(model_id)

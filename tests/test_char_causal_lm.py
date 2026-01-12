@@ -39,7 +39,7 @@ class TestCharacterCausalLMWrapperUnit:
 
         config = CharacterCausalLMConfig(base_model_name_or_path="dummy", num_bytes=2)
         with pytest.raises(ValueError, match="must be divisible by 2"):
-            CharacterCausalLMWrapper(config, model=MockModel(), tokenizer=UTF16Tokenizer())
+            CharacterCausalLMWrapper(config, model=MockModel())
 
     def test_init_invalid_hidden_size_utf32(self):
         """Test that non-divisible-by-4 hidden sizes raise error for UTF-32."""
@@ -55,7 +55,7 @@ class TestCharacterCausalLMWrapperUnit:
 
         config = CharacterCausalLMConfig(base_model_name_or_path="dummy", num_bytes=4)
         with pytest.raises(ValueError, match="must be divisible by 4"):
-            CharacterCausalLMWrapper(config, model=MockModel(), tokenizer=UTF32Tokenizer())
+            CharacterCausalLMWrapper(config, model=MockModel())
 
     def test_truncate_at_eos_simple(self):
         """Test _truncate_at_eos with simple input."""
@@ -125,7 +125,6 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
         return CharacterCausalLMWrapper.from_base_model(
             "sign/utf8-lm-tiny",
             num_bytes=2,
-            tokenizer=tokenizer,
         )
 
     def test_forward_shape(self, wrapper, tokenizer):
@@ -207,6 +206,38 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
         outputs = wrapper(input_ids)
 
         assert outputs.logits.ndim == 4
+
+    def test_forward_with_inputs_embeds(self, wrapper, tokenizer):
+        """Test forward pass with inputs_embeds instead of input_ids."""
+        texts = ["Hello"]
+        encoded = tokenizer.torch(texts, padding=True)
+        input_ids = encoded.input_ids
+
+        embeds = wrapper.char_embedding.encode(input_ids)
+
+        outputs = wrapper(inputs_embeds=embeds)
+
+        assert outputs.logits is not None
+        assert outputs.logits.ndim == 4
+
+    def test_forward_inputs_embeds_matches_input_ids(self, wrapper, tokenizer):
+        """Test that forward with inputs_embeds matches forward with input_ids."""
+        texts = ["Test"]
+        encoded = tokenizer.torch(texts, padding=True)
+        input_ids = encoded.input_ids
+
+        outputs_ids = wrapper(input_ids)
+
+        embeds = wrapper.char_embedding.encode(input_ids)
+        outputs_embeds = wrapper(inputs_embeds=embeds)
+
+        assert torch.allclose(outputs_ids.logits, outputs_embeds.logits, atol=1e-5)
+
+    def test_forward_requires_input(self, wrapper):
+        """Test that forward raises error when neither input_ids nor inputs_embeds provided."""
+        import pytest
+        with pytest.raises(ValueError, match="Either input_ids or inputs_embeds must be provided"):
+            wrapper()
 
     def test_loss_computation_is_scalar(self, wrapper, tokenizer):
         """Test that loss is properly computed as scalar."""
@@ -382,7 +413,6 @@ class TestCharacterCausalLMWrapperIntegrationUTF32:
         return CharacterCausalLMWrapper.from_base_model(
             "sign/utf8-lm-tiny",
             num_bytes=4,
-            tokenizer=tokenizer,
         )
 
     def test_forward_shape(self, wrapper, tokenizer):

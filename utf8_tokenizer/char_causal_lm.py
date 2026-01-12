@@ -10,7 +10,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig, Pre
 from transformers.modeling_outputs import CausalLMOutput
 
 from utf8_tokenizer.char_embeddings import CharacterEmbedding
-from utf8_tokenizer.tokenizer import UTF16Tokenizer, UTF32Tokenizer
+from utf8_tokenizer.tokenizer import EOS_TOKEN_ID
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,6 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         self,
         config: CharacterCausalLMConfig,
         model: PreTrainedModel | None = None,
-        tokenizer: UTF16Tokenizer | UTF32Tokenizer | None = None,
     ):
         super().__init__(config)
 
@@ -72,9 +71,6 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         self.model = model
 
         num_bytes = config.num_bytes
-        if tokenizer is None:
-            tokenizer = UTF16Tokenizer() if num_bytes == 2 else UTF32Tokenizer()
-        self.tokenizer = tokenizer
 
         hidden_size = model.config.hidden_size
         if hidden_size % num_bytes != 0:
@@ -100,12 +96,18 @@ class CharacterCausalLMWrapper(PreTrainedModel):
 
     def forward(
         self,
-        input_ids: torch.Tensor,
+        input_ids: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         labels: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> CausalLMOutput:
-        embeds = self.char_embedding.encode(input_ids)
+        if inputs_embeds is None:
+            if input_ids is None:
+                raise ValueError("Either input_ids or inputs_embeds must be provided")
+            embeds = self.char_embedding.encode(input_ids)
+        else:
+            embeds = inputs_embeds
 
         outputs = self.model(
             inputs_embeds=embeds,
@@ -116,25 +118,33 @@ class CharacterCausalLMWrapper(PreTrainedModel):
 
         loss = None
         if labels is not None:
-            num_bytes = self.config.num_bytes
             shifted_logits = logits[:, :-1].contiguous()
             shifted_labels = labels[:, 1:].contiguous()
-
-            # Split labels into bytes for per-byte loss
-            shifted_labels_bytes = self.char_embedding._split_to_bytes(shifted_labels)
-
-            # Mask out padding tokens (token value 0 means all bytes are 0)
-            valid_tokens = shifted_labels != 0
-            valid_mask = valid_tokens.unsqueeze(-1).expand(-1, -1, num_bytes)
-
-            loss = functional.cross_entropy(
-                shifted_logits.view(-1, 256),
-                shifted_labels_bytes.view(-1).long(),
-                reduction="none",
-            )
-            loss = (loss * valid_mask.reshape(-1)).sum() / valid_mask.sum().clamp(min=1)
+            loss = self.compute_loss(shifted_logits, shifted_labels)
 
         return CausalLMOutput(loss=loss, logits=logits)
+
+    @torch.compile()
+    def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """Compute cross-entropy loss for byte-level predictions.
+
+        Args:
+            logits: Predicted logits of shape (batch, seq, num_bytes, 256).
+            labels: Target token IDs of shape (batch, seq).
+
+        Returns:
+            Scalar loss tensor.
+        """
+        labels_bytes = self.char_embedding._split_to_bytes(labels)
+
+        padding_mask = (labels == 0).unsqueeze(-1).expand_as(labels_bytes)
+        labels_bytes = labels_bytes.masked_fill(padding_mask, -100)
+
+        return functional.cross_entropy(
+            logits.view(-1, 256),
+            labels_bytes.view(-1).long(),
+            ignore_index=-100,
+        )
 
     def _prefill(
         self,
@@ -205,7 +215,7 @@ class CharacterCausalLMWrapper(PreTrainedModel):
     def _truncate_at_eos(
         input_ids: torch.Tensor,
         generated: list[torch.Tensor],
-        eos_token_id: int,
+        eos_token_id: int = EOS_TOKEN_ID,
     ) -> list[torch.Tensor]:
         """Concatenate input and generated, truncate at EOS, remove padding."""
         batch_size, input_len = input_ids.shape
@@ -225,7 +235,7 @@ class CharacterCausalLMWrapper(PreTrainedModel):
     @staticmethod
     def _truncate_generated_at_eos(
         generated: list[torch.Tensor],
-        eos_token_id: int,
+        eos_token_id: int = EOS_TOKEN_ID,
     ) -> list[torch.Tensor]:
         """Truncate generated tokens at EOS, remove padding."""
         gen_stacked = torch.stack(generated, dim=1)
@@ -268,8 +278,6 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         if input_ids is None and inputs_embeds is None:
             raise ValueError("Either input_ids or inputs_embeds must be provided")
 
-        eos_token_id = self.tokenizer.eos_token_id
-
         if inputs_embeds is not None:
             batch_size, seq_len, _ = inputs_embeds.shape
             device = inputs_embeds.device
@@ -290,7 +298,7 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         done = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
         for _ in range(max_new_tokens - 1):
-            done = done | (next_token == eos_token_id)
+            done = done | (next_token == EOS_TOKEN_ID)
             if done.all():
                 break
 
@@ -303,16 +311,15 @@ class CharacterCausalLMWrapper(PreTrainedModel):
             generated.append(next_token)
 
         if input_ids is not None:
-            return self._truncate_at_eos(input_ids, generated, eos_token_id)
+            return self._truncate_at_eos(input_ids, generated)
 
-        return self._truncate_generated_at_eos(generated, eos_token_id)
+        return self._truncate_generated_at_eos(generated)
 
     @classmethod
     def from_base_model(
         cls,
         base_model_name_or_path: str,
         num_bytes: int = 2,
-        tokenizer: UTF16Tokenizer | UTF32Tokenizer | None = None,
         **kwargs,
     ) -> CharacterCausalLMWrapper:
         """Create a CharacterCausalLMWrapper from a base model name/path.
@@ -320,7 +327,6 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         Args:
             base_model_name_or_path: Name or path of the base CausalLM model.
             num_bytes: Number of bytes per token (2 for UTF-16, 4 for UTF-32).
-            tokenizer: Optional tokenizer instance.
             **kwargs: Additional arguments passed to from_pretrained for the base model.
 
         Returns:
@@ -331,7 +337,7 @@ class CharacterCausalLMWrapper(PreTrainedModel):
             num_bytes=num_bytes,
         )
         model = AutoModelForCausalLM.from_pretrained(base_model_name_or_path, **kwargs)
-        return cls(config=config, model=model, tokenizer=tokenizer)
+        return cls(config=config, model=model)
 
 
 AutoConfig.register("character_causal_lm", CharacterCausalLMConfig)

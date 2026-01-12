@@ -57,6 +57,12 @@ class CharacterEmbedding(nn.Module):
         byte_shifts = torch.arange(0, 8 * num_bytes, 8, dtype=torch.long)
         self.register_buffer("_byte_shifts", byte_shifts, persistent=False)
 
+    @property
+    def weight(self) -> torch.Tensor:
+        """Get the embedding weight matrix."""
+        return self.embedding.weight
+
+    @torch.compile()
     def _split_to_bytes(self, tokens: torch.Tensor) -> torch.Tensor:
         """
         Split tokens into individual bytes using broadcast bit shifts.
@@ -69,6 +75,7 @@ class CharacterEmbedding(nn.Module):
         """
         return (tokens.unsqueeze(-1) >> self._byte_shifts) & 0xFF
 
+    @torch.compile()
     def _combine_from_bytes(self, byte_indices: torch.Tensor) -> torch.Tensor:
         """
         Combine bytes back into tokens using broadcast bit shifts.
@@ -107,7 +114,7 @@ class CharacterEmbedding(nn.Module):
         raise ValueError(f"Expected 1D or 2D input, got {len(input_shape)}D")
 
     def decode(
-        self, grouped: torch.Tensor, compute_decoded: bool = True
+            self, grouped: torch.Tensor, compute_decoded: bool = True
     ) -> tuple[torch.Tensor | None, torch.Tensor]:
         """
         Decode grouped representation back to token indices.
@@ -127,30 +134,26 @@ class CharacterEmbedding(nn.Module):
         if len(input_shape) == 2:
             batch = input_shape[0]
             embeddings = grouped.view(batch, self.num_bytes, self.byte_dim)
-            logits = embeddings @ self.embedding.weight.T
-
-            if compute_decoded:
-                byte_indices = logits.argmax(dim=-1)
-                decoded = self._combine_from_bytes(byte_indices)
-            else:
-                decoded = None
-
-            return decoded, logits
-
-        if len(input_shape) == 3:
+        elif len(input_shape) == 3:
             batch, seq, _ = input_shape
             embeddings = grouped.view(batch, seq, self.num_bytes, self.byte_dim)
-            logits = embeddings @ self.embedding.weight.T
+        else:
+            raise ValueError(f"Expected 2D or 3D input, got {len(input_shape)}D")
 
-            if compute_decoded:
-                byte_indices = logits.argmax(dim=-1)
-                decoded = self._combine_from_bytes(byte_indices)
-            else:
-                decoded = None
+        logits = embeddings @ self.embedding.weight.T
 
-            return decoded, logits
+        if self.num_bytes == 4:
+            # Apply UTF-32 byte restrictions: top 11 bits must be zero (<= 0x10FFFF)
+            logits[..., 3, 1:] = float("-inf")  # 4th byte can only be 0x00
+            logits[..., 2, 0x11:] = float("-inf")  # 3rd byte only valid up to 0x10
 
-        raise ValueError(f"Expected 2D or 3D input, got {len(input_shape)}D")
+        if compute_decoded:
+            byte_indices = logits.argmax(dim=-1)
+            decoded = self._combine_from_bytes(byte_indices)
+        else:
+            decoded = None
+
+        return decoded, logits
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         """
