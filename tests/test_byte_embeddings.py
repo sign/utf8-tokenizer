@@ -21,7 +21,7 @@ class TestEmbeddings:
     @pytest.fixture
     def sample_input(self):
         B, L = 2, 16  # noqa: N806
-        return torch.randint(0, 256, (B, L), dtype=torch.uint8)
+        return torch.randint(0, 256, (B, L), dtype=torch.long)
 
     @pytest.fixture
     def attention_mask(self):
@@ -29,13 +29,13 @@ class TestEmbeddings:
         return torch.ones(B, L, dtype=torch.long)
 
     def test_unpack_bits(self):
-        x = torch.tensor([255, 0, 128], dtype=torch.uint8)
+        x = torch.tensor([255, 0, 128], dtype=torch.long)
         bits = unpack_bits(x)
 
         assert bits.shape == (3, 8)
-        assert torch.allclose(bits[0], torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.uint8))
-        assert torch.allclose(bits[1], torch.tensor([0, 0, 0, 0, 0, 0, 0, 0], dtype=torch.uint8))
-        assert torch.allclose(bits[2], torch.tensor([1, 0, 0, 0, 0, 0, 0, 0], dtype=torch.uint8))
+        assert torch.allclose(bits[0], torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.long))
+        assert torch.allclose(bits[1], torch.tensor([0, 0, 0, 0, 0, 0, 0, 0], dtype=torch.long))
+        assert torch.allclose(bits[2], torch.tensor([1, 0, 0, 0, 0, 0, 0, 0], dtype=torch.long))
 
     def test_embedding_setup(self, model):
         original_embeddings = model.get_input_embeddings()

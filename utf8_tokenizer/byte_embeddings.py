@@ -4,7 +4,7 @@ from torch.nn import Embedding
 
 
 def unpack_bits(x: torch.Tensor) -> torch.Tensor:
-    assert x.dtype == torch.uint8, "Expected bytes tensor input (torch.uint8)"
+    # assert x.dtype == torch.uint8, "Expected bytes tensor input (torch.uint8)"
 
     # Create shifts by [7, 6, 5, 4, 3, 2, 1, 0]
     shifts = torch.arange(7, -1, -1, device=x.device, dtype=torch.uint8)
@@ -92,6 +92,7 @@ class PatchedBitEmbeddings(nn.Module):
             self._bits_cached = self._bits256_base.to(device=w.device, dtype=w.dtype, non_blocking=True).contiguous()
             self._bits_device, self._bits_dtype = w.device, w.dtype
 
+    @torch._dynamo.disable
     def _needs_refresh(self) -> bool:
         w = self.embeddings.weight
         bw = self.bit_proj_w
@@ -139,11 +140,7 @@ class PatchedBitEmbeddings(nn.Module):
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         # Façade already refreshed by pre-hook; forward is just a normal embedding lookup
-        input_ids = input_ids.to(dtype=torch.long)
-        # TODO: ideally, we should use
-        #  return nn.functional.embedding(input_ids, self.weight)
-        #  https://github.com/pytorch/pytorch/issues/162918
-        return self.weight[input_ids]
+        return torch.nn.functional.embedding(input_ids, self.weight)
 
 def tie_embeddings(model):
     try:
