@@ -148,7 +148,7 @@ def tie_embeddings(model):
         model.tie_embeddings_and_encoder_decoder()
     except AttributeError:
         # HuggingFace Transformers >=v5
-        model.tie_embeddings()
+        model.tie_weights()
 
 def patch_embedding_layers(model):
     embeddings: Embedding = model.get_input_embeddings()
