@@ -62,7 +62,6 @@ class CharacterEmbedding(nn.Module):
         """Get the embedding weight matrix."""
         return self.embedding.weight
 
-    @torch.compile()
     def _split_to_bytes(self, tokens: torch.Tensor) -> torch.Tensor:
         """
         Split tokens into individual bytes using broadcast bit shifts.
@@ -75,7 +74,6 @@ class CharacterEmbedding(nn.Module):
         """
         return (tokens.unsqueeze(-1) >> self._byte_shifts) & 0xFF
 
-    @torch.compile()
     def _combine_from_bytes(self, byte_indices: torch.Tensor) -> torch.Tensor:
         """
         Combine bytes back into tokens using broadcast bit shifts.

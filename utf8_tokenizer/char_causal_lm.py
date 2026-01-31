@@ -130,7 +130,6 @@ class CharacterCausalLMWrapper(PreTrainedModel):
 
         return CausalLMOutput(loss=loss, logits=logits)
 
-    @torch.compile()
     def compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """Compute cross-entropy loss for byte-level predictions.
 
