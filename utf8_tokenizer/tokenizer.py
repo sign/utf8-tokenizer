@@ -101,6 +101,23 @@ class UTFTokenizer(PreTrainedTokenizer):
         return self._tokenize(text, errors=errors, **kwargs)
 
     def _encode_plus(self, text: TextInput, **kwargs):
+        # In transformers v5, _encode_plus receives batched input directly
+        # Detect batch and delegate to parent's batch handling which calls us per-item
+        is_split_into_words = kwargs.get('is_split_into_words', False)
+        is_batched = isinstance(text, (list, tuple)) and (
+            (not text and not is_split_into_words)
+            or (text and is_split_into_words and isinstance(text[0], (list, tuple)))
+            or (text and not is_split_into_words and isinstance(text[0], (str, list, tuple)))
+        )
+        if is_batched:
+            return super()._encode_plus(text, **kwargs)
+
+        # Convert strategy enums to values for prepare_for_model (transformers v5 compatibility)
+        if 'truncation_strategy' in kwargs:
+            kwargs['truncation'] = kwargs.pop('truncation_strategy').value
+        if 'padding_strategy' in kwargs:
+            kwargs['padding'] = kwargs.pop('padding_strategy').value
+
         return self.prepare_for_model(self._tokenize_ids(text), **kwargs)
 
     def _convert_token_to_id(self, token: str):
@@ -116,12 +133,9 @@ class UTFTokenizer(PreTrainedTokenizer):
 
     def build_inputs_with_special_tokens(
         self, token_ids_0: list[int] | bytearray, token_ids_1: list[int] | None = None
-    ) -> list[int] | bytearray:
+    ) -> list[int]:
         assert token_ids_1 is None, "UTFTokenizer only supports single sequence"
-
-        token_ids_0.append(EOS_TOKEN_ID)
-        token_ids_0.insert(0, BOS_TOKEN_ID)
-        return token_ids_0
+        return [BOS_TOKEN_ID, *token_ids_0, EOS_TOKEN_ID]
 
     def _encode(self, texts: list[TextInput], add_special_tokens: bool) -> list[bytes]:
         encoding = self.encoding
@@ -168,13 +182,16 @@ class UTFTokenizer(PreTrainedTokenizer):
                     stacklevel=2,
                 )
                 truncation = False
+            elif add_special_tokens and max_length < 2:
+                # Edge case: max_length too small for special tokens
+                # Delegate to _original_call for consistent behavior across transformers versions
+                result = self._original_call(
+                    texts, add_special_tokens=True, padding=padding,
+                    truncation=True, max_length=max_length, return_tensors="pt"
+                )
+                return TokenizerResult(input_ids=result["input_ids"], attention_mask=result["attention_mask"])
             else:
                 max_length = max_length - 2 if add_special_tokens else max_length
-                if max_length < 0:
-                    warnings.warn(
-                        "We need to remove more tokens than exist. Default to no truncation.",
-                        stacklevel=2)
-                    truncation = False
 
         if truncation:
             input_bytes = self._encode_and_truncate(texts, max_length, add_special_tokens)

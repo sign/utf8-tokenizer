@@ -55,7 +55,7 @@ class CharacterEmbedding(nn.Module):
 
         # Pre-compute shift amounts as buffers (0, 8, 16, 24 for the bytes)
         byte_shifts = torch.arange(0, 8 * num_bytes, 8, dtype=torch.long)
-        self.register_buffer("_byte_shifts", byte_shifts, persistent=False)
+        self.register_buffer("_byte_shifts", byte_shifts, persistent=True)
 
     @property
     def weight(self) -> torch.Tensor:

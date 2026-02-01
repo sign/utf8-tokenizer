@@ -10,8 +10,12 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: Test (transformers ${{ matrix.transformers }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        transformers: ["<5", ">=5"]
 
     steps:
       - uses: actions/checkout@v6
@@ -24,7 +28,7 @@ jobs:
           activate-environment: true
 
       - name: Install dependencies
-        run: uv pip install ".[dev]"
+        run: uv pip install ".[dev]" "transformers${{ matrix.transformers }}"
 
       - name: Test Code
         run: uv run pytest -n auto --dist loadscope

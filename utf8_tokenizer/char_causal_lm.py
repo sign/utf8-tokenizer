@@ -70,10 +70,16 @@ class CharacterCausalLMWrapper(PreTrainedModel):
     ):
         super().__init__(config)
 
+        # Required for transformers v5 weight loading
+        if not hasattr(self, 'all_tied_weights_keys'):
+            self.all_tied_weights_keys = {}
+
         if model is None:
             if config.base_model_name_or_path is None:
                 raise ValueError("Either model or config.base_model_name_or_path must be provided")
-            model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
+            # Create empty model structure - weights will be loaded by transformers from checkpoint
+            base_config = AutoConfig.from_pretrained(config.base_model_name_or_path)
+            model = AutoModelForCausalLM.from_config(base_config)
 
         self.model = model
 
