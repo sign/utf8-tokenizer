@@ -1,7 +1,5 @@
-import torch
 from tqdm import tqdm
 
-from utf8_tokenizer.byt5_comparison import ByT5ComparableTokenizer
 from utf8_tokenizer.tokenizer import UTF8Tokenizer
 
 if __name__ == "__main__":

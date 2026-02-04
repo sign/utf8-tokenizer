@@ -1,9 +1,8 @@
-from transformers import AutoModelForCausalLM, LogitsProcessorList
 import torch
-from utf8_tokenizer.logits_processor import UTF8ValidationLogitsProcessor
-from utf8_tokenizer.char_causal_lm import CharacterCausalLMWrapper
+from transformers import AutoModelForCausalLM, LogitsProcessorList
 
 from utf8_tokenizer import UTF8Tokenizer
+from utf8_tokenizer.logits_processor import UTF8ValidationLogitsProcessor
 
 # model_id = "sign/utf8-lm-tiny"
 model_id = "sign/utf16-lm-tiny"

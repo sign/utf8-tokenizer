@@ -41,7 +41,7 @@ utf8_tokenizer = ["*.jinja"]
 [tool.ruff]
 line-length = 120
 extend-exclude = [
-    "experiments/*",
+    "experiments/language-modelling/run_clm.py",
 ]
 
 [tool.ruff.lint]

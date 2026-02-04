@@ -1,9 +1,9 @@
-from huggingface_hub import load_state_dict_from_file
-from transformers import AutoModelForCausalLM, AutoConfig
 import torch
+from huggingface_hub import load_state_dict_from_file
 from safetensors.torch import save_file
+from transformers import AutoConfig, AutoModelForCausalLM
 
-from utf8_tokenizer.byte_embeddings import patch_embedding_layers, join_embedding_layers
+from utf8_tokenizer.byte_embeddings import join_embedding_layers, patch_embedding_layers
 
 MODEL_CHECKPOINT = "./output-tiny-lm-fineweb"
 
