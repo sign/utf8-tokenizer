@@ -112,6 +112,178 @@ class TestCharacterCausalLMWrapperUnit:
         assert valid_tokens[0, 1].item() is False  # padding
 
 
+class TestGetGenerationParams:
+    """Unit tests for _get_generation_params."""
+
+    def test_none_config(self):
+        max_t, min_t = CharacterCausalLMWrapper._get_generation_params(None)
+        assert max_t == 50
+        assert min_t == 0
+
+    def test_empty_config(self):
+        max_t, min_t = CharacterCausalLMWrapper._get_generation_params(GenerationConfig())
+        assert max_t == 50
+        assert min_t == 0
+
+    def test_max_only(self):
+        max_t, min_t = CharacterCausalLMWrapper._get_generation_params(
+            GenerationConfig(max_new_tokens=10)
+        )
+        assert max_t == 10
+        assert min_t == 0
+
+    def test_min_only(self):
+        max_t, min_t = CharacterCausalLMWrapper._get_generation_params(
+            GenerationConfig(min_new_tokens=3)
+        )
+        assert max_t == 50
+        assert min_t == 3
+
+    def test_both(self):
+        max_t, min_t = CharacterCausalLMWrapper._get_generation_params(
+            GenerationConfig(max_new_tokens=8, min_new_tokens=4)
+        )
+        assert max_t == 8
+        assert min_t == 4
+
+    def test_min_equals_max(self):
+        max_t, min_t = CharacterCausalLMWrapper._get_generation_params(
+            GenerationConfig(max_new_tokens=5, min_new_tokens=5)
+        )
+        assert max_t == 5
+        assert min_t == 5
+
+
+class TestTruncateAtEosWithMinNewTokens:
+    """Unit tests for _truncate_at_eos with min_new_tokens."""
+
+    EOS = 2
+
+    def test_eos_at_position_0_min_0_truncates(self):
+        input_ids = torch.tensor([[10, 11]])
+        generated = [torch.tensor([self.EOS]), torch.tensor([99]), torch.tensor([88])]
+
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            input_ids, generated, self.EOS, min_new_tokens=0
+        )
+        assert result[0].tolist() == [10, 11, self.EOS]
+
+    def test_eos_at_position_0_min_2_skips_early_eos(self):
+        input_ids = torch.tensor([[10, 11]])
+        generated = [torch.tensor([self.EOS]), torch.tensor([99]), torch.tensor([88])]
+
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            input_ids, generated, self.EOS, min_new_tokens=2
+        )
+        # EOS at gen position 0 is within min window, should be skipped
+        assert result[0].tolist() == [10, 11, self.EOS, 99, 88]
+
+    def test_eos_at_position_0_min_1_skips_it(self):
+        input_ids = torch.tensor([[10]])
+        generated = [torch.tensor([self.EOS]), torch.tensor([99]), torch.tensor([88])]
+
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            input_ids, generated, self.EOS, min_new_tokens=1
+        )
+        # EOS at gen pos 0 is within min=1 window, skipped
+        assert result[0].tolist() == [10, self.EOS, 99, 88]
+
+    def test_eos_after_min_window_truncates(self):
+        input_ids = torch.tensor([[10]])
+        generated = [
+            torch.tensor([99]),
+            torch.tensor([88]),
+            torch.tensor([self.EOS]),
+            torch.tensor([77]),
+        ]
+
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            input_ids, generated, self.EOS, min_new_tokens=2
+        )
+        # EOS at gen pos 2 is after min=2 window, truncate there
+        assert result[0].tolist() == [10, 99, 88, self.EOS]
+
+    def test_eos_inside_and_after_min_window(self):
+        input_ids = torch.tensor([[10]])
+        generated = [
+            torch.tensor([self.EOS]),  # pos 0: in min window
+            torch.tensor([99]),        # pos 1: in min window
+            torch.tensor([88]),        # pos 2: after min window
+            torch.tensor([self.EOS]),  # pos 3: after min window
+            torch.tensor([77]),        # pos 4: after EOS
+        ]
+
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            input_ids, generated, self.EOS, min_new_tokens=2
+        )
+        # First EOS at pos 0 is in min window (skipped).
+        # Next token after min window is pos 2 (88), not EOS.
+        # EOS at pos 3 is after min window, truncate there.
+        assert result[0].tolist() == [10, self.EOS, 99, 88, self.EOS]
+
+    def test_no_eos_returns_all(self):
+        input_ids = torch.tensor([[10]])
+        generated = [torch.tensor([99]), torch.tensor([88]), torch.tensor([77])]
+
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            input_ids, generated, self.EOS, min_new_tokens=2
+        )
+        assert result[0].tolist() == [10, 99, 88, 77]
+
+    def test_min_larger_than_generated(self):
+        input_ids = torch.tensor([[10]])
+        generated = [torch.tensor([self.EOS]), torch.tensor([self.EOS])]
+
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            input_ids, generated, self.EOS, min_new_tokens=5
+        )
+        # min=5 but only 2 generated, all EOS in window, nothing to truncate
+        assert result[0].tolist() == [10, self.EOS, self.EOS]
+
+
+class TestTruncateGeneratedAtEosWithMinNewTokens:
+    """Unit tests for _truncate_generated_at_eos with min_new_tokens."""
+
+    EOS = 2
+
+    def test_eos_at_position_0_min_0_truncates(self):
+        generated = [torch.tensor([self.EOS]), torch.tensor([99])]
+
+        result = CharacterCausalLMWrapper._truncate_generated_at_eos(
+            generated, self.EOS, min_new_tokens=0
+        )
+        assert result[0].tolist() == [self.EOS]
+
+    def test_eos_at_position_0_min_2_skips(self):
+        generated = [torch.tensor([self.EOS]), torch.tensor([99]), torch.tensor([88])]
+
+        result = CharacterCausalLMWrapper._truncate_generated_at_eos(
+            generated, self.EOS, min_new_tokens=2
+        )
+        assert result[0].tolist() == [self.EOS, 99, 88]
+
+    def test_eos_after_min_window_truncates(self):
+        generated = [
+            torch.tensor([99]),
+            torch.tensor([88]),
+            torch.tensor([self.EOS]),
+            torch.tensor([77]),
+        ]
+
+        result = CharacterCausalLMWrapper._truncate_generated_at_eos(
+            generated, self.EOS, min_new_tokens=2
+        )
+        assert result[0].tolist() == [99, 88, self.EOS]
+
+    def test_no_eos_returns_all(self):
+        generated = [torch.tensor([99]), torch.tensor([88])]
+
+        result = CharacterCausalLMWrapper._truncate_generated_at_eos(
+            generated, self.EOS, min_new_tokens=1
+        )
+        assert result[0].tolist() == [99, 88]
+
+
 @pytest.mark.slow
 class TestCharacterCausalLMWrapperIntegrationUTF16:
     """Integration tests for UTF-16 with real model."""
@@ -397,32 +569,116 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
 
         assert len(generated) == 2
 
-    def test_generate_generation_config_max_new_tokens(self, wrapper, tokenizer):
-        """Test that generation_config.max_new_tokens limits output length."""
-        texts = ["Hello"]
-        encoded = tokenizer.torch(texts, padding=True)
+    def test_generate_no_config_uses_default_max_50(self, wrapper, tokenizer):
+        """Test that no generation_config defaults to max_new_tokens=50."""
+        encoded = tokenizer.torch(["Hello"], padding=True)
+        input_ids = encoded.input_ids
+
+        gen_default = wrapper.generate(input_ids)
+        gen_explicit = wrapper.generate(
+            input_ids, generation_config=GenerationConfig(max_new_tokens=50)
+        )
+
+        assert gen_default[0].tolist() == gen_explicit[0].tolist()
+
+    def test_generate_max_new_tokens_1(self, wrapper, tokenizer):
+        """Test max_new_tokens=1 generates exactly 1 token."""
+        encoded = tokenizer.torch(["Hello"], padding=True)
         input_ids = encoded.input_ids
         input_len = input_ids.shape[1]
 
-        config = GenerationConfig(max_new_tokens=2)
-        generated = wrapper.generate(input_ids, generation_config=config)
+        generated = wrapper.generate(
+            input_ids, generation_config=GenerationConfig(max_new_tokens=1)
+        )
+        assert len(generated[0]) == input_len + 1
 
-        assert len(generated) == 1
-        assert len(generated[0]) <= input_len + 2
-
-    def test_generate_generation_config_min_new_tokens(self, wrapper, tokenizer):
-        """Test that generation_config.min_new_tokens forces longer output."""
-        texts = ["Hello"]
-        encoded = tokenizer.torch(texts, padding=True)
+    @pytest.mark.parametrize("max_tokens", [2, 3, 5, 10])
+    def test_generate_max_new_tokens_exact(self, wrapper, tokenizer, max_tokens):
+        """Test max_new_tokens produces exactly N generated tokens (no EOS in this model)."""
+        encoded = tokenizer.torch(["Hello"], padding=True)
         input_ids = encoded.input_ids
         input_len = input_ids.shape[1]
 
-        config = GenerationConfig(min_new_tokens=4, max_new_tokens=10)
-        generated = wrapper.generate(input_ids, generation_config=config)
+        generated = wrapper.generate(
+            input_ids, generation_config=GenerationConfig(max_new_tokens=max_tokens)
+        )
+        assert len(generated[0]) == input_len + max_tokens
 
-        assert len(generated) == 1
-        generated_len = len(generated[0]) - input_len
-        assert generated_len >= 4
+    def test_generate_min_equals_max(self, wrapper, tokenizer):
+        """Test min_new_tokens == max_new_tokens gives exact count."""
+        encoded = tokenizer.torch(["Hello"], padding=True)
+        input_ids = encoded.input_ids
+        input_len = input_ids.shape[1]
+
+        for n in [1, 3, 5]:
+            generated = wrapper.generate(
+                input_ids,
+                generation_config=GenerationConfig(min_new_tokens=n, max_new_tokens=n),
+            )
+            assert len(generated[0]) == input_len + n
+
+    def test_generate_min_only_uses_default_max(self, wrapper, tokenizer):
+        """Test that min_new_tokens alone still uses default max=50."""
+        encoded = tokenizer.torch(["Hello"], padding=True)
+        input_ids = encoded.input_ids
+
+        gen_min_only = wrapper.generate(
+            input_ids, generation_config=GenerationConfig(min_new_tokens=3)
+        )
+        gen_default = wrapper.generate(input_ids)
+
+        assert gen_min_only[0].tolist() == gen_default[0].tolist()
+
+    def test_generate_deterministic(self, wrapper, tokenizer):
+        """Test that generation is deterministic (greedy decoding)."""
+        encoded = tokenizer.torch(["Hello"], padding=True)
+        input_ids = encoded.input_ids
+
+        gen_a = wrapper.generate(
+            input_ids, generation_config=GenerationConfig(max_new_tokens=10)
+        )
+        gen_b = wrapper.generate(
+            input_ids, generation_config=GenerationConfig(max_new_tokens=10)
+        )
+        assert gen_a[0].tolist() == gen_b[0].tolist()
+
+    def test_generate_increasing_max_extends_prefix(self, wrapper, tokenizer):
+        """Test that max=N output is a prefix of max=N+M output."""
+        encoded = tokenizer.torch(["Hello"], padding=True)
+        input_ids = encoded.input_ids
+
+        gen_short = wrapper.generate(
+            input_ids, generation_config=GenerationConfig(max_new_tokens=3)
+        )
+        gen_long = wrapper.generate(
+            input_ids, generation_config=GenerationConfig(max_new_tokens=10)
+        )
+        short_tokens = gen_short[0].tolist()
+        long_tokens = gen_long[0].tolist()
+        assert long_tokens[:len(short_tokens)] == short_tokens
+
+    def test_generate_with_inputs_embeds_max(self, wrapper, tokenizer):
+        """Test max_new_tokens with inputs_embeds (no input_ids)."""
+        encoded = tokenizer.torch(["Hello"], padding=True)
+        embeds = wrapper.char_embedding.encode(encoded.input_ids)
+
+        generated = wrapper.generate(
+            inputs_embeds=embeds,
+            generation_config=GenerationConfig(max_new_tokens=3),
+        )
+        assert len(generated[0]) == 3
+
+    def test_generate_with_inputs_embeds_min_max(self, wrapper, tokenizer):
+        """Test min=max with inputs_embeds."""
+        encoded = tokenizer.torch(["Hello"], padding=True)
+        embeds = wrapper.char_embedding.encode(encoded.input_ids)
+
+        generated = wrapper.generate(
+            inputs_embeds=embeds,
+            generation_config=GenerationConfig(min_new_tokens=4, max_new_tokens=4),
+        )
+        assert len(generated[0]) == 4
+
 
 @pytest.mark.slow
 class TestCharacterCausalLMWrapperIntegrationUTF32:
