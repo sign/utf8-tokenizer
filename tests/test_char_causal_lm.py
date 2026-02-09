@@ -2,6 +2,7 @@
 
 import pytest
 import torch
+from transformers import GenerationConfig
 
 from utf8_tokenizer import UTF16Tokenizer, UTF32Tokenizer
 from utf8_tokenizer.char_causal_lm import CharacterCausalLMConfig, CharacterCausalLMWrapper
@@ -160,7 +161,7 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
         encoded = tokenizer.torch(texts, padding=True)
         input_ids = encoded.input_ids
 
-        generated = wrapper.generate(input_ids, max_new_tokens=5)
+        generated = wrapper.generate(input_ids, generation_config=GenerationConfig(max_new_tokens=5))
 
         assert isinstance(generated, list)
         assert len(generated) == 1
@@ -172,7 +173,7 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
         encoded = tokenizer.torch(texts, padding=True)
         input_ids = encoded.input_ids
 
-        generated = wrapper.generate(input_ids, max_new_tokens=100)
+        generated = wrapper.generate(input_ids, generation_config=GenerationConfig(max_new_tokens=100))
 
         assert len(generated) == 1
         assert len(generated[0]) > 0
@@ -183,7 +184,7 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
         encoded = tokenizer.torch(texts, padding=True)
         input_ids = encoded.input_ids
 
-        generated = wrapper.generate(input_ids, max_new_tokens=3)
+        generated = wrapper.generate(input_ids, generation_config=GenerationConfig(max_new_tokens=3))
 
         assert len(generated) == 2  # batch size preserved
 
@@ -333,7 +334,7 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
         inputs_embeds = wrapper.char_embedding.encode(input_ids)
 
         # Generate with inputs_embeds only (no input_ids)
-        generated = wrapper.generate(inputs_embeds=inputs_embeds, max_new_tokens=5)
+        generated = wrapper.generate(inputs_embeds=inputs_embeds, generation_config=GenerationConfig(max_new_tokens=5))
 
         assert isinstance(generated, list)
         assert len(generated) == 1
@@ -351,7 +352,7 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
         generated = wrapper.generate(
             input_ids=input_ids,
             inputs_embeds=inputs_embeds,
-            max_new_tokens=5
+            generation_config=GenerationConfig(max_new_tokens=5),
         )
 
         assert isinstance(generated, list)
@@ -367,14 +368,12 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
 
         inputs_embeds = wrapper.char_embedding.encode(input_ids)
 
-        # Generate with input_ids
-        gen_from_ids = wrapper.generate(input_ids=input_ids, max_new_tokens=5)
+        gen_from_ids = wrapper.generate(input_ids=input_ids, generation_config=GenerationConfig(max_new_tokens=5))
 
-        # Generate with inputs_embeds (and input_ids for output concatenation)
         gen_from_embeds = wrapper.generate(
             input_ids=input_ids,
             inputs_embeds=inputs_embeds,
-            max_new_tokens=5
+            generation_config=GenerationConfig(max_new_tokens=5),
         )
 
         # Should produce identical results
@@ -384,7 +383,7 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
         """Test that generate raises error when neither input_ids nor inputs_embeds provided."""
         import pytest
         with pytest.raises(ValueError, match="Either input_ids or inputs_embeds must be provided"):
-            wrapper.generate(max_new_tokens=5)
+            wrapper.generate(generation_config=GenerationConfig(max_new_tokens=5))
 
     def test_generate_with_inputs_embeds_batch(self, wrapper, tokenizer):
         """Test batch generation with inputs_embeds."""
@@ -394,10 +393,36 @@ class TestCharacterCausalLMWrapperIntegrationUTF16:
 
         inputs_embeds = wrapper.char_embedding.encode(input_ids)
 
-        generated = wrapper.generate(inputs_embeds=inputs_embeds, max_new_tokens=3)
+        generated = wrapper.generate(inputs_embeds=inputs_embeds, generation_config=GenerationConfig(max_new_tokens=3))
 
         assert len(generated) == 2
 
+    def test_generate_generation_config_max_new_tokens(self, wrapper, tokenizer):
+        """Test that generation_config.max_new_tokens limits output length."""
+        texts = ["Hello"]
+        encoded = tokenizer.torch(texts, padding=True)
+        input_ids = encoded.input_ids
+        input_len = input_ids.shape[1]
+
+        config = GenerationConfig(max_new_tokens=2)
+        generated = wrapper.generate(input_ids, generation_config=config)
+
+        assert len(generated) == 1
+        assert len(generated[0]) <= input_len + 2
+
+    def test_generate_generation_config_min_new_tokens(self, wrapper, tokenizer):
+        """Test that generation_config.min_new_tokens forces longer output."""
+        texts = ["Hello"]
+        encoded = tokenizer.torch(texts, padding=True)
+        input_ids = encoded.input_ids
+        input_len = input_ids.shape[1]
+
+        config = GenerationConfig(min_new_tokens=4, max_new_tokens=10)
+        generated = wrapper.generate(input_ids, generation_config=config)
+
+        assert len(generated) == 1
+        generated_len = len(generated[0]) - input_len
+        assert generated_len >= 4
 
 @pytest.mark.slow
 class TestCharacterCausalLMWrapperIntegrationUTF32:
@@ -448,7 +473,7 @@ class TestCharacterCausalLMWrapperIntegrationUTF32:
         encoded = tokenizer.torch(texts, padding=True)
         input_ids = encoded.input_ids
 
-        generated = wrapper.generate(input_ids, max_new_tokens=5)
+        generated = wrapper.generate(input_ids, generation_config=GenerationConfig(max_new_tokens=5))
 
         assert isinstance(generated, list)
         assert len(generated) == 1

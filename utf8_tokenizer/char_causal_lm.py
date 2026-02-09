@@ -6,7 +6,7 @@ import logging
 
 import torch
 import torch.nn.functional as functional
-from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
+from transformers import AutoConfig, AutoModelForCausalLM, GenerationConfig, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
 
 from utf8_tokenizer.char_embeddings import CharacterEmbedding
@@ -227,6 +227,7 @@ class CharacterCausalLMWrapper(PreTrainedModel):
             input_ids: torch.Tensor,
             generated: list[torch.Tensor],
             eos_token_id: int = EOS_TOKEN_ID,
+            min_new_tokens: int = 0,
     ) -> list[torch.Tensor]:
         """Concatenate input and generated, truncate at EOS, remove padding."""
         batch_size, input_len = input_ids.shape
@@ -236,10 +237,10 @@ class CharacterCausalLMWrapper(PreTrainedModel):
 
         result = []
         for seq in all_tokens:
-            gen_portion = seq[input_len:]
+            gen_portion = seq[input_len + min_new_tokens:]
             eos_pos = (gen_portion == eos_token_id).nonzero(as_tuple=True)[0]
             if len(eos_pos) > 0:
-                seq = seq[: input_len + eos_pos[0] + 1]
+                seq = seq[: input_len + min_new_tokens + eos_pos[0] + 1]
             result.append(seq[seq != 0])
         return result
 
@@ -247,17 +248,28 @@ class CharacterCausalLMWrapper(PreTrainedModel):
     def _truncate_generated_at_eos(
             generated: list[torch.Tensor],
             eos_token_id: int = EOS_TOKEN_ID,
+            min_new_tokens: int = 0,
     ) -> list[torch.Tensor]:
         """Truncate generated tokens at EOS, remove padding."""
         gen_stacked = torch.stack(generated, dim=1)
 
         result = []
         for seq in gen_stacked:
-            eos_pos = (seq == eos_token_id).nonzero(as_tuple=True)[0]
+            search_portion = seq[min_new_tokens:]
+            eos_pos = (search_portion == eos_token_id).nonzero(as_tuple=True)[0]
             if len(eos_pos) > 0:
-                seq = seq[: eos_pos[0] + 1]
+                seq = seq[: min_new_tokens + eos_pos[0] + 1]
             result.append(seq[seq != 0])
         return result
+
+    @staticmethod
+    def _get_generation_params(generation_config: GenerationConfig | None) -> tuple[int, int]:
+        """Extract max_new_tokens and min_new_tokens from generation config."""
+        if generation_config is None:
+            generation_config = GenerationConfig()
+        max_new_tokens = getattr(generation_config, 'max_new_tokens', None) or 50
+        min_new_tokens = getattr(generation_config, 'min_new_tokens', None) or 0
+        return max_new_tokens, min_new_tokens
 
     @torch.inference_mode()
     def generate(
@@ -265,7 +277,7 @@ class CharacterCausalLMWrapper(PreTrainedModel):
             input_ids: torch.Tensor | None = None,
             attention_mask: torch.Tensor | None = None,
             inputs_embeds: torch.Tensor | None = None,
-            max_new_tokens: int = 50,
+            generation_config: GenerationConfig | None = None,
             **kwargs,
     ) -> list[torch.Tensor]:
         """Generate tokens autoregressively using greedy decoding with KV cache.
@@ -276,7 +288,8 @@ class CharacterCausalLMWrapper(PreTrainedModel):
             attention_mask: Optional attention mask for padding.
             inputs_embeds: Pre-computed input embeddings of shape (batch, seq, hidden_size).
                 If provided, input_ids is ignored for prefill but used for output concatenation.
-            max_new_tokens: Maximum number of tokens to generate.
+            generation_config: GenerationConfig with generation parameters.
+                Supports max_new_tokens and min_new_tokens.
             **kwargs: Additional arguments (ignored, for compatibility).
 
         Returns:
@@ -285,6 +298,8 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         """
         if kwargs:
             logger.warning(f"Ignoring additional generate arguments: {list(kwargs.keys())}")
+
+        max_new_tokens, min_new_tokens = self._get_generation_params(generation_config)
 
         if input_ids is None and inputs_embeds is None:
             raise ValueError("Either input_ids or inputs_embeds must be provided")
@@ -308,10 +323,11 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         generated = [next_token]
         done = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
-        for _ in range(max_new_tokens - 1):
-            done = done | (next_token == EOS_TOKEN_ID)
-            if done.all():
-                break
+        for step in range(max_new_tokens - 1):
+            if (step + 2) > min_new_tokens:
+                done = done | (next_token == EOS_TOKEN_ID)
+                if done.all():
+                    break
 
             mask_len += 1
             current_pos = current_pos + 1
@@ -322,9 +338,9 @@ class CharacterCausalLMWrapper(PreTrainedModel):
             generated.append(next_token)
 
         if input_ids is not None:
-            return self._truncate_at_eos(input_ids, generated)
+            return self._truncate_at_eos(input_ids, generated, min_new_tokens=min_new_tokens)
 
-        return self._truncate_generated_at_eos(generated)
+        return self._truncate_generated_at_eos(generated, min_new_tokens=min_new_tokens)
 
     @classmethod
     def from_base_model(
