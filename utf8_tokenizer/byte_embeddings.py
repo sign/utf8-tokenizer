@@ -41,9 +41,6 @@ class PatchedBitEmbeddings(nn.Module):
         # Tieable façade parameter (what HF ties to the LM head)
         self.weight = nn.Parameter(embeddings.weight.detach().clone(), requires_grad=True)
 
-        # Bits table buffer (float32 initially); device/dtype-adjusted copies are cached lazily
-        all_bytes = torch.arange(256, dtype=torch.uint8)
-        self.register_buffer("_bits256_base", unpack_bits(all_bytes), persistent=False)
         self._bits_cached = None  # (256, 8) on current device/dtype
         self._bits_device = torch.device("meta")  # sentinel (forces first refresh)
         self._bits_dtype = dtype
@@ -86,10 +83,15 @@ class PatchedBitEmbeddings(nn.Module):
     # ---- internals ----
 
     def _ensure_bits_cached(self):
-        """Cache bits in current device/dtype (no work in the hot path after first time)."""
+        """Lazily compute and cache bits in current device/dtype.
+
+        Deferred so that torch.device('meta') contexts (Transformers v5
+        from_pretrained) never produce a corrupted base table.
+        """
         w = self.embeddings.weight
         if (self._bits_device is not w.device) or (self._bits_dtype != w.dtype):
-            self._bits_cached = self._bits256_base.to(device=w.device, dtype=w.dtype, non_blocking=True).contiguous()
+            bits_base = unpack_bits(torch.arange(256, dtype=torch.uint8))
+            self._bits_cached = bits_base.to(device=w.device, dtype=w.dtype, non_blocking=True).contiguous()
             self._bits_device, self._bits_dtype = w.device, w.dtype
 
     @torch._dynamo.disable

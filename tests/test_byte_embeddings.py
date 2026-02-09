@@ -180,6 +180,38 @@ class TestEmbeddings:
         final_embedding_weight = patched_embeddings.embeddings.weight.data
         assert not torch.allclose(final_embedding_weight, initial_embedding_weight, atol=1e-6)
 
+    def test_forward_correct_under_meta_device(self):
+        """Forward pass must produce correct results after meta-device init.
+
+        Transformers v5 runs __init__ under torch.device('meta'), then
+        materializes on a real device. The lazily-computed bits table must
+        be correct when first used.
+        """
+        # 1. Build a reference on CPU
+        ref_embed = nn.Embedding(256, 64)
+        ref_patched = PatchedBitEmbeddings(ref_embed)
+        saved_state = ref_patched.state_dict()
+
+        with torch.inference_mode():
+            ids = torch.arange(256).unsqueeze(0)
+            expected = ref_patched(ids)
+
+        # 2. Re-create under meta device (as Transformers v5 from_pretrained does)
+        with torch.device("meta"):
+            base_embed = nn.Embedding(256, 64)
+            patched = PatchedBitEmbeddings(base_embed)
+
+        # 3. Materialize on CPU and load the checkpoint
+        patched = patched.to_empty(device="cpu")
+        patched.load_state_dict(saved_state)
+
+        with torch.inference_mode():
+            actual = patched(ids)
+
+        assert torch.equal(actual, expected), (
+            "Forward pass produces wrong results after meta-device init"
+        )
+
     def test_bit_projection_with_inference_mode(self, model, sample_input):
         """Test that bit projection embeddings work in torch.inference_mode()."""
         patch_embedding_layers(model)

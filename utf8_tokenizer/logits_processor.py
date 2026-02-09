@@ -118,24 +118,22 @@ class UTF8ValidationLogitsProcessor(LogitsProcessor):
             seq = input_ids[batch_idx]
             seq_len = len(seq)
 
-            # Determine which bytes are valid for the next position
             if seq_len == 0:
-                # Empty sequence - allow any valid start byte
-                validation_mask = masks['start']
-            else:
-                # Only examine last 4 bytes (max UTF-8 sequence length)
-                last_bytes = seq[-min(4, seq_len):].tolist()
+                continue
 
-                # Fast path: if last byte is ASCII, allow any start byte
-                if last_bytes[-1] < 0x80:
-                    validation_mask = masks['start']
-                else:
-                    # Analyze UTF-8 state to determine valid continuations
-                    state = self._analyze_utf8_state(last_bytes)
-                    if state['complete']:
-                        validation_mask = masks['start']
-                    else:
-                        validation_mask = self._select_continuation_mask(state, masks)
+            # Only examine last 4 bytes (max UTF-8 sequence length)
+            last_bytes = seq[-min(4, seq_len):].tolist()
+
+            # Fast path: if last byte is ASCII, character is complete
+            if last_bytes[-1] < 0x80:
+                continue
+
+            # Analyze UTF-8 state to determine valid continuations
+            state = self._analyze_utf8_state(last_bytes)
+            if state['complete']:
+                continue
+
+            validation_mask = self._select_continuation_mask(state, masks)
 
             # Mask invalid bytes in-place
             invalid_mask = ~validation_mask
