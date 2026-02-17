@@ -160,8 +160,7 @@ class UTF8ValidationLogitsProcessor(LogitsProcessor):
             bytes_after = len(last_bytes) - i - 1
 
             if byte_val < 0x80:
-                # ASCII - complete if it's the last byte
-                return {'complete': i == len(last_bytes) - 1}
+                return {'complete': True}
 
             elif 0xC2 <= byte_val < 0xE0:
                 # 2-byte sequence start

@@ -88,6 +88,27 @@ class TestUTF8State:
         assert state["complete"] is True
 
 
+    def test_orphan_continuation_after_ascii(self, processor):
+        """Test that orphan continuation bytes after ASCII are treated as complete."""
+        # ASCII followed by orphan continuation byte
+        state = processor._get_utf8_state([0x41, 0x80])
+        assert state["complete"] is True
+
+        # ASCII followed by multiple orphan continuation bytes
+        state = processor._get_utf8_state([0x41, 0x80, 0x80])
+        assert state["complete"] is True
+
+    def test_orphan_continuation_after_ascii_logits(self, processor):
+        """Test that logits processing doesn't crash on orphan continuation bytes."""
+        input_ids = torch.tensor([[0x41, 0x80]])
+        scores = torch.zeros((1, 256))
+        processed = processor(input_ids, scores)
+
+        # Should not crash and should allow valid start bytes (no masking since complete)
+        for i in range(256):
+            assert processed[0, i] == 0.0
+
+
 class TestValidStartBytes:
     """Test valid UTF-8 start bytes."""
 
