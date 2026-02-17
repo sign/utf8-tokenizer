@@ -1,7 +1,7 @@
 import pytest
 import torch
 import torch.nn as nn
-from transformers import AutoModelForMaskedLM
+from transformers import BertForMaskedLM
 
 from utf8_tokenizer.byte_embeddings import (
     PatchedBitEmbeddings,
@@ -14,7 +14,7 @@ from utf8_tokenizer.byte_embeddings import (
 class TestEmbeddings:
     @pytest.fixture
     def model(self):
-        model = AutoModelForMaskedLM.from_pretrained("prajjwal1/bert-tiny")
+        model = BertForMaskedLM.from_pretrained("prajjwal1/bert-tiny")
         model.resize_token_embeddings(256)
         return model
 
