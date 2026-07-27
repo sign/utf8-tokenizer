@@ -19,20 +19,13 @@ try:
 
 except ImportError:
     def _fill_padded(output: np.ndarray, all_values: np.ndarray, lengths: np.ndarray, pad_value: int) -> None:
-        """Fill padded output array using vectorized numpy ops."""
+        """Fill one row at a time. Beats a fully vectorised scatter, which pays for building
+        per-element row/column index arrays; numpy already copies each row at C speed."""
         output.fill(pad_value)
-        if len(all_values) == 0:
-            return
-        batch_size = len(lengths)
-        row_indices = np.repeat(np.arange(batch_size), lengths)
-        cumsum = lengths.cumsum()
-        positions = np.arange(len(all_values))
-        groups = np.searchsorted(cumsum, positions, side='right')
-        prev_cumsum = np.empty(batch_size, dtype=np.uint32)
-        prev_cumsum[0] = 0
-        prev_cumsum[1:] = cumsum[:-1]
-        col_indices = positions - prev_cumsum[groups]
-        output[row_indices, col_indices] = all_values
+        offset = 0
+        for row, length in enumerate(lengths):
+            output[row, :length] = all_values[offset:offset + length]
+            offset += length
 
 
 TORCH_TO_NP: dict[torch.dtype, np.dtype] = {

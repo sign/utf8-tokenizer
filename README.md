@@ -17,8 +17,11 @@ Instead, we rely on C0 Control characters (0-31) as special tokens, which are no
 ## Usage
 
 ```shell
-pip install utf8-tokenizer
+pip install "utf8-tokenizer[fast]"
 ```
+
+The `fast` extra pulls in `numba`, which makes padding 5-20x faster. Plain
+`pip install utf8-tokenizer` works too, and falls back to pure numpy.
 
 Tokenization:
 
