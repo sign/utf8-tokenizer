@@ -224,41 +224,26 @@ class CharacterCausalLMWrapper(PreTrainedModel):
 
     @staticmethod
     def _truncate_at_eos(
-            input_ids: torch.Tensor,
             generated: list[torch.Tensor],
+            input_ids: torch.Tensor | None = None,
             eos_token_id: int = EOS_TOKEN_ID,
             min_new_tokens: int = 0,
     ) -> list[torch.Tensor]:
-        """Concatenate input and generated, truncate at EOS, remove padding."""
-        batch_size, input_len = input_ids.shape
+        """Prepend input_ids if given, truncate at the first EOS past min_new_tokens, remove padding."""
+        all_tokens = torch.stack(generated, dim=1)
+        input_len = 0
+        if input_ids is not None:
+            input_len = input_ids.shape[1]
+            all_tokens = torch.cat([input_ids, all_tokens], dim=1)
 
-        gen_stacked = torch.stack(generated, dim=1)
-        all_tokens = torch.cat([input_ids, gen_stacked], dim=1)
+        # EOS within the first min_new_tokens generated positions is ignored
+        search_start = input_len + min_new_tokens
 
         result = []
         for seq in all_tokens:
-            gen_portion = seq[input_len + min_new_tokens:]
-            eos_pos = (gen_portion == eos_token_id).nonzero(as_tuple=True)[0]
+            eos_pos = (seq[search_start:] == eos_token_id).nonzero(as_tuple=True)[0]
             if len(eos_pos) > 0:
-                seq = seq[: input_len + min_new_tokens + eos_pos[0] + 1]
-            result.append(seq[seq != 0])
-        return result
-
-    @staticmethod
-    def _truncate_generated_at_eos(
-            generated: list[torch.Tensor],
-            eos_token_id: int = EOS_TOKEN_ID,
-            min_new_tokens: int = 0,
-    ) -> list[torch.Tensor]:
-        """Truncate generated tokens at EOS, remove padding."""
-        gen_stacked = torch.stack(generated, dim=1)
-
-        result = []
-        for seq in gen_stacked:
-            search_portion = seq[min_new_tokens:]
-            eos_pos = (search_portion == eos_token_id).nonzero(as_tuple=True)[0]
-            if len(eos_pos) > 0:
-                seq = seq[: min_new_tokens + eos_pos[0] + 1]
+                seq = seq[: search_start + eos_pos[0] + 1]
             result.append(seq[seq != 0])
         return result
 
@@ -337,10 +322,7 @@ class CharacterCausalLMWrapper(PreTrainedModel):
             )
             generated.append(next_token)
 
-        if input_ids is not None:
-            return self._truncate_at_eos(input_ids, generated, min_new_tokens=min_new_tokens)
-
-        return self._truncate_generated_at_eos(generated, min_new_tokens=min_new_tokens)
+        return self._truncate_at_eos(generated, input_ids, min_new_tokens=min_new_tokens)
 
     @classmethod
     def from_base_model(

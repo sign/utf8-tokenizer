@@ -65,7 +65,7 @@ class TestCharacterCausalLMWrapperUnit:
         generated = [torch.tensor([33])]  # "!"
         eos_token_id = 2
 
-        result = CharacterCausalLMWrapper._truncate_at_eos(input_ids, generated, eos_token_id)
+        result = CharacterCausalLMWrapper._truncate_at_eos(generated, input_ids, eos_token_id)
 
         assert len(result) == 1
         assert result[0].tolist() == [72, 105, 33]
@@ -80,7 +80,7 @@ class TestCharacterCausalLMWrapperUnit:
         ]
         eos_token_id = 2
 
-        result = CharacterCausalLMWrapper._truncate_at_eos(input_ids, generated, eos_token_id)
+        result = CharacterCausalLMWrapper._truncate_at_eos(generated, input_ids, eos_token_id)
 
         assert len(result) == 1
         assert result[0].tolist() == [72, 105, 2]
@@ -94,7 +94,7 @@ class TestCharacterCausalLMWrapperUnit:
         generated = [torch.tensor([49, 50])]  # "1", "2"
         eos_token_id = 2
 
-        result = CharacterCausalLMWrapper._truncate_at_eos(input_ids, generated, eos_token_id)
+        result = CharacterCausalLMWrapper._truncate_at_eos(generated, input_ids, eos_token_id)
 
         assert len(result) == 2
         assert result[0].tolist() == [65, 49]  # Zeros removed
@@ -164,7 +164,7 @@ class TestTruncateAtEosWithMinNewTokens:
         generated = [torch.tensor([self.EOS]), torch.tensor([99]), torch.tensor([88])]
 
         result = CharacterCausalLMWrapper._truncate_at_eos(
-            input_ids, generated, self.EOS, min_new_tokens=0
+            generated, input_ids, self.EOS, min_new_tokens=0
         )
         assert result[0].tolist() == [10, 11, self.EOS]
 
@@ -173,7 +173,7 @@ class TestTruncateAtEosWithMinNewTokens:
         generated = [torch.tensor([self.EOS]), torch.tensor([99]), torch.tensor([88])]
 
         result = CharacterCausalLMWrapper._truncate_at_eos(
-            input_ids, generated, self.EOS, min_new_tokens=2
+            generated, input_ids, self.EOS, min_new_tokens=2
         )
         # EOS at gen position 0 is within min window, should be skipped
         assert result[0].tolist() == [10, 11, self.EOS, 99, 88]
@@ -183,7 +183,7 @@ class TestTruncateAtEosWithMinNewTokens:
         generated = [torch.tensor([self.EOS]), torch.tensor([99]), torch.tensor([88])]
 
         result = CharacterCausalLMWrapper._truncate_at_eos(
-            input_ids, generated, self.EOS, min_new_tokens=1
+            generated, input_ids, self.EOS, min_new_tokens=1
         )
         # EOS at gen pos 0 is within min=1 window, skipped
         assert result[0].tolist() == [10, self.EOS, 99, 88]
@@ -198,7 +198,7 @@ class TestTruncateAtEosWithMinNewTokens:
         ]
 
         result = CharacterCausalLMWrapper._truncate_at_eos(
-            input_ids, generated, self.EOS, min_new_tokens=2
+            generated, input_ids, self.EOS, min_new_tokens=2
         )
         # EOS at gen pos 2 is after min=2 window, truncate there
         assert result[0].tolist() == [10, 99, 88, self.EOS]
@@ -214,7 +214,7 @@ class TestTruncateAtEosWithMinNewTokens:
         ]
 
         result = CharacterCausalLMWrapper._truncate_at_eos(
-            input_ids, generated, self.EOS, min_new_tokens=2
+            generated, input_ids, self.EOS, min_new_tokens=2
         )
         # First EOS at pos 0 is in min window (skipped).
         # Next token after min window is pos 2 (88), not EOS.
@@ -226,7 +226,7 @@ class TestTruncateAtEosWithMinNewTokens:
         generated = [torch.tensor([99]), torch.tensor([88]), torch.tensor([77])]
 
         result = CharacterCausalLMWrapper._truncate_at_eos(
-            input_ids, generated, self.EOS, min_new_tokens=2
+            generated, input_ids, self.EOS, min_new_tokens=2
         )
         assert result[0].tolist() == [10, 99, 88, 77]
 
@@ -235,30 +235,30 @@ class TestTruncateAtEosWithMinNewTokens:
         generated = [torch.tensor([self.EOS]), torch.tensor([self.EOS])]
 
         result = CharacterCausalLMWrapper._truncate_at_eos(
-            input_ids, generated, self.EOS, min_new_tokens=5
+            generated, input_ids, self.EOS, min_new_tokens=5
         )
         # min=5 but only 2 generated, all EOS in window, nothing to truncate
         assert result[0].tolist() == [10, self.EOS, self.EOS]
 
 
 class TestTruncateGeneratedAtEosWithMinNewTokens:
-    """Unit tests for _truncate_generated_at_eos with min_new_tokens."""
+    """Unit tests for _truncate_at_eos without input_ids (generated tokens only)."""
 
     EOS = 2
 
     def test_eos_at_position_0_min_0_truncates(self):
         generated = [torch.tensor([self.EOS]), torch.tensor([99])]
 
-        result = CharacterCausalLMWrapper._truncate_generated_at_eos(
-            generated, self.EOS, min_new_tokens=0
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            generated, eos_token_id=self.EOS, min_new_tokens=0
         )
         assert result[0].tolist() == [self.EOS]
 
     def test_eos_at_position_0_min_2_skips(self):
         generated = [torch.tensor([self.EOS]), torch.tensor([99]), torch.tensor([88])]
 
-        result = CharacterCausalLMWrapper._truncate_generated_at_eos(
-            generated, self.EOS, min_new_tokens=2
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            generated, eos_token_id=self.EOS, min_new_tokens=2
         )
         assert result[0].tolist() == [self.EOS, 99, 88]
 
@@ -270,16 +270,16 @@ class TestTruncateGeneratedAtEosWithMinNewTokens:
             torch.tensor([77]),
         ]
 
-        result = CharacterCausalLMWrapper._truncate_generated_at_eos(
-            generated, self.EOS, min_new_tokens=2
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            generated, eos_token_id=self.EOS, min_new_tokens=2
         )
         assert result[0].tolist() == [99, 88, self.EOS]
 
     def test_no_eos_returns_all(self):
         generated = [torch.tensor([99]), torch.tensor([88])]
 
-        result = CharacterCausalLMWrapper._truncate_generated_at_eos(
-            generated, self.EOS, min_new_tokens=1
+        result = CharacterCausalLMWrapper._truncate_at_eos(
+            generated, eos_token_id=self.EOS, min_new_tokens=1
         )
         assert result[0].tolist() == [99, 88]
 
