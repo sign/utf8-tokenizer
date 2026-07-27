@@ -209,34 +209,3 @@ class UTF8ValidationLogitsProcessor(LogitsProcessor):
             Boolean tensor indicating which bytes are valid
         """
         return masks['continuation'][state['first_byte']][state['position']]
-
-    # Backward compatibility methods for existing tests
-    def _get_utf8_state(self, byte_list: list) -> dict:
-        """Alias for _analyze_utf8_state (backward compatibility)."""
-        return self._analyze_utf8_state(byte_list)
-
-    def _valid_start_bytes(self) -> set:
-        """Return set of valid UTF-8 start bytes (backward compatibility)."""
-        valid = set()
-        valid.update(range(0x00, 0x80))  # ASCII
-        valid.update(range(0xC2, 0xE0))  # 2-byte start
-        valid.update(range(0xE0, 0xF0))  # 3-byte start
-        valid.update(range(0xF0, 0xF5))  # 4-byte start
-        return valid
-
-    def _valid_continuation_bytes(self, state: dict) -> set:
-        """Return set of valid continuation bytes (backward compatibility)."""
-        masks = self._get_device_masks('cpu')
-        mask = masks['start'] if state['complete'] else self._select_continuation_mask(state, masks)
-        return {i for i in range(256) if mask[i]}
-
-    def _get_allowed_next_bytes(self, sequence) -> set:
-        """Return set of allowed next bytes (backward compatibility)."""
-        if isinstance(sequence, torch.Tensor):
-            sequence = sequence.tolist()
-
-        if not sequence:
-            return self._valid_start_bytes()
-
-        state = self._analyze_utf8_state(sequence[-min(4, len(sequence)):])
-        return self._valid_start_bytes() if state['complete'] else self._valid_continuation_bytes(state)

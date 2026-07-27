@@ -12,90 +12,104 @@ def processor():
     return UTF8ValidationLogitsProcessor()
 
 
+def allowed_next_bytes(processor, sequence) -> set:
+    """Bytes the processor leaves unmasked after `sequence`, read off its own masks."""
+    if isinstance(sequence, torch.Tensor):
+        sequence = sequence.tolist()
+
+    masks = processor._get_device_masks('cpu')
+    mask = masks['start']
+    if sequence:
+        state = processor._analyze_utf8_state(sequence[-4:])
+        if not state['complete']:
+            mask = processor._select_continuation_mask(state, masks)
+    return {byte for byte in range(256) if mask[byte]}
+
+
 class TestUTF8State:
     """Test the internal UTF-8 state detection."""
 
     def test_empty_sequence(self, processor):
         """Test that empty sequence is considered complete."""
-        state = processor._get_utf8_state([])
+        state = processor._analyze_utf8_state([])
         assert state["complete"] is True
 
     def test_ascii_complete(self, processor):
         """Test that ASCII characters are complete."""
         # Single ASCII character
-        state = processor._get_utf8_state([0x41])  # 'A'
+        state = processor._analyze_utf8_state([0x41])  # 'A'
         assert state["complete"] is True
 
         # Multiple ASCII characters
-        state = processor._get_utf8_state([0x48, 0x65, 0x6C, 0x6C, 0x6F])  # "Hello"
+        state = processor._analyze_utf8_state([0x48, 0x65, 0x6C, 0x6C, 0x6F])  # "Hello"
         assert state["complete"] is True
 
     def test_two_byte_incomplete(self, processor):
         """Test incomplete 2-byte sequence."""
-        state = processor._get_utf8_state([0xC2])  # Start of 2-byte sequence
+        state = processor._analyze_utf8_state([0xC2])  # Start of 2-byte sequence
         assert state["complete"] is False
         assert state["first_byte"] == 0xC2
         assert state["position"] == 1
 
     def test_two_byte_complete(self, processor):
         """Test complete 2-byte sequence."""
-        state = processor._get_utf8_state([0xC2, 0xA9])  # © symbol
+        state = processor._analyze_utf8_state([0xC2, 0xA9])  # © symbol
         assert state["complete"] is True
 
     def test_three_byte_incomplete_position_1(self, processor):
         """Test incomplete 3-byte sequence at position 1."""
-        state = processor._get_utf8_state([0xE2])  # Start of 3-byte sequence
+        state = processor._analyze_utf8_state([0xE2])  # Start of 3-byte sequence
         assert state["complete"] is False
         assert state["first_byte"] == 0xE2
         assert state["position"] == 1
 
     def test_three_byte_incomplete_position_2(self, processor):
         """Test incomplete 3-byte sequence at position 2."""
-        state = processor._get_utf8_state([0xE2, 0x82])  # Partial 3-byte sequence
+        state = processor._analyze_utf8_state([0xE2, 0x82])  # Partial 3-byte sequence
         assert state["complete"] is False
         assert state["first_byte"] == 0xE2
         assert state["position"] == 2
 
     def test_three_byte_complete(self, processor):
         """Test complete 3-byte sequence."""
-        state = processor._get_utf8_state([0xE2, 0x82, 0xAC])  # € symbol
+        state = processor._analyze_utf8_state([0xE2, 0x82, 0xAC])  # € symbol
         assert state["complete"] is True
 
     def test_four_byte_incomplete_position_1(self, processor):
         """Test incomplete 4-byte sequence at position 1."""
-        state = processor._get_utf8_state([0xF0])  # Start of 4-byte sequence
+        state = processor._analyze_utf8_state([0xF0])  # Start of 4-byte sequence
         assert state["complete"] is False
         assert state["first_byte"] == 0xF0
         assert state["position"] == 1
 
     def test_four_byte_incomplete_position_2(self, processor):
         """Test incomplete 4-byte sequence at position 2."""
-        state = processor._get_utf8_state([0xF0, 0x9F])
+        state = processor._analyze_utf8_state([0xF0, 0x9F])
         assert state["complete"] is False
         assert state["first_byte"] == 0xF0
         assert state["position"] == 2
 
     def test_four_byte_incomplete_position_3(self, processor):
         """Test incomplete 4-byte sequence at position 3."""
-        state = processor._get_utf8_state([0xF0, 0x9F, 0x98])
+        state = processor._analyze_utf8_state([0xF0, 0x9F, 0x98])
         assert state["complete"] is False
         assert state["first_byte"] == 0xF0
         assert state["position"] == 3
 
     def test_four_byte_complete(self, processor):
         """Test complete 4-byte sequence."""
-        state = processor._get_utf8_state([0xF0, 0x9F, 0x98, 0x80])  # 😀 emoji
+        state = processor._analyze_utf8_state([0xF0, 0x9F, 0x98, 0x80])  # 😀 emoji
         assert state["complete"] is True
 
 
     def test_orphan_continuation_after_ascii(self, processor):
         """Test that orphan continuation bytes after ASCII are treated as complete."""
         # ASCII followed by orphan continuation byte
-        state = processor._get_utf8_state([0x41, 0x80])
+        state = processor._analyze_utf8_state([0x41, 0x80])
         assert state["complete"] is True
 
         # ASCII followed by multiple orphan continuation bytes
-        state = processor._get_utf8_state([0x41, 0x80, 0x80])
+        state = processor._analyze_utf8_state([0x41, 0x80, 0x80])
         assert state["complete"] is True
 
     def test_orphan_continuation_after_ascii_logits(self, processor):
@@ -114,7 +128,7 @@ class TestValidStartBytes:
 
     def test_valid_start_bytes(self, processor):
         """Test that all valid start bytes are included."""
-        valid = processor._valid_start_bytes()
+        valid = allowed_next_bytes(processor, [])
 
         # ASCII: 0x00-0x7F
         for i in range(0x00, 0x80):
@@ -134,7 +148,7 @@ class TestValidStartBytes:
 
     def test_invalid_start_bytes_excluded(self, processor):
         """Test that invalid start bytes are not included."""
-        valid = processor._valid_start_bytes()
+        valid = allowed_next_bytes(processor, [])
 
         # Continuation bytes: 0x80-0xBF
         for i in range(0x80, 0xC0):
@@ -155,12 +169,12 @@ class TestTwoByteSequences:
     def test_two_byte_continuation(self, processor):
         """Test that 2-byte sequences require 80-BF as second byte."""
         # Test with C2
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xC2]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xC2]))
         expected = set(range(0x80, 0xC0))
         assert allowed == expected
 
         # Test with DF
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xDF]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xDF]))
         expected = set(range(0x80, 0xC0))
         assert allowed == expected
 
@@ -170,53 +184,53 @@ class TestThreeByteSequences:
 
     def test_e0_second_byte(self, processor):
         """Test E0 requires A0-BF as second byte."""
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xE0]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xE0]))
         expected = set(range(0xA0, 0xC0))
         assert allowed == expected
 
     def test_e0_third_byte(self, processor):
         """Test E0 requires 80-BF as third byte."""
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xE0, 0xA0]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xE0, 0xA0]))
         expected = set(range(0x80, 0xC0))
         assert allowed == expected
 
     def test_ed_second_byte(self, processor):
         """Test ED requires 80-9F as second byte."""
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xED]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xED]))
         expected = set(range(0x80, 0xA0))
         assert allowed == expected
 
     def test_ed_third_byte(self, processor):
         """Test ED requires 80-BF as third byte."""
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xED, 0x80]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xED, 0x80]))
         expected = set(range(0x80, 0xC0))
         assert allowed == expected
 
     def test_e1_ec_second_byte(self, processor):
         """Test E1-EC require 80-BF as second byte."""
         for first_byte in [0xE1, 0xE5, 0xEC]:
-            allowed = processor._get_allowed_next_bytes(torch.tensor([first_byte]))
+            allowed = allowed_next_bytes(processor, torch.tensor([first_byte]))
             expected = set(range(0x80, 0xC0))
             assert allowed == expected
 
     def test_e1_ec_third_byte(self, processor):
         """Test E1-EC require 80-BF as third byte."""
         for first_byte in [0xE1, 0xE5, 0xEC]:
-            allowed = processor._get_allowed_next_bytes(torch.tensor([first_byte, 0x80]))
+            allowed = allowed_next_bytes(processor, torch.tensor([first_byte, 0x80]))
             expected = set(range(0x80, 0xC0))
             assert allowed == expected
 
     def test_ee_ef_second_byte(self, processor):
         """Test EE-EF require 80-BF as second byte."""
         for first_byte in [0xEE, 0xEF]:
-            allowed = processor._get_allowed_next_bytes(torch.tensor([first_byte]))
+            allowed = allowed_next_bytes(processor, torch.tensor([first_byte]))
             expected = set(range(0x80, 0xC0))
             assert allowed == expected
 
     def test_ee_ef_third_byte(self, processor):
         """Test EE-EF require 80-BF as third byte."""
         for first_byte in [0xEE, 0xEF]:
-            allowed = processor._get_allowed_next_bytes(torch.tensor([first_byte, 0x80]))
+            allowed = allowed_next_bytes(processor, torch.tensor([first_byte, 0x80]))
             expected = set(range(0x80, 0xC0))
             assert allowed == expected
 
@@ -226,58 +240,58 @@ class TestFourByteSequences:
 
     def test_f0_second_byte(self, processor):
         """Test F0 requires 90-BF as second byte."""
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xF0]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xF0]))
         expected = set(range(0x90, 0xC0))
         assert allowed == expected
 
     def test_f0_third_byte(self, processor):
         """Test F0 requires 80-BF as third byte."""
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xF0, 0x90]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xF0, 0x90]))
         expected = set(range(0x80, 0xC0))
         assert allowed == expected
 
     def test_f0_fourth_byte(self, processor):
         """Test F0 requires 80-BF as fourth byte."""
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xF0, 0x90, 0x80]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xF0, 0x90, 0x80]))
         expected = set(range(0x80, 0xC0))
         assert allowed == expected
 
     def test_f4_second_byte(self, processor):
         """Test F4 requires 80-8F as second byte."""
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xF4]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xF4]))
         expected = set(range(0x80, 0x90))
         assert allowed == expected
 
     def test_f4_third_byte(self, processor):
         """Test F4 requires 80-BF as third byte."""
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xF4, 0x80]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xF4, 0x80]))
         expected = set(range(0x80, 0xC0))
         assert allowed == expected
 
     def test_f4_fourth_byte(self, processor):
         """Test F4 requires 80-BF as fourth byte."""
-        allowed = processor._get_allowed_next_bytes(torch.tensor([0xF4, 0x80, 0x80]))
+        allowed = allowed_next_bytes(processor, torch.tensor([0xF4, 0x80, 0x80]))
         expected = set(range(0x80, 0xC0))
         assert allowed == expected
 
     def test_f1_f3_second_byte(self, processor):
         """Test F1-F3 require 80-BF as second byte."""
         for first_byte in [0xF1, 0xF2, 0xF3]:
-            allowed = processor._get_allowed_next_bytes(torch.tensor([first_byte]))
+            allowed = allowed_next_bytes(processor, torch.tensor([first_byte]))
             expected = set(range(0x80, 0xC0))
             assert allowed == expected
 
     def test_f1_f3_third_byte(self, processor):
         """Test F1-F3 require 80-BF as third byte."""
         for first_byte in [0xF1, 0xF2, 0xF3]:
-            allowed = processor._get_allowed_next_bytes(torch.tensor([first_byte, 0x80]))
+            allowed = allowed_next_bytes(processor, torch.tensor([first_byte, 0x80]))
             expected = set(range(0x80, 0xC0))
             assert allowed == expected
 
     def test_f1_f3_fourth_byte(self, processor):
         """Test F1-F3 require 80-BF as fourth byte."""
         for first_byte in [0xF1, 0xF2, 0xF3]:
-            allowed = processor._get_allowed_next_bytes(torch.tensor([first_byte, 0x80, 0x80]))
+            allowed = allowed_next_bytes(processor, torch.tensor([first_byte, 0x80, 0x80]))
             expected = set(range(0x80, 0xC0))
             assert allowed == expected
 
