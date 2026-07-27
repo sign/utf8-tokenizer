@@ -227,9 +227,6 @@ class UTFTokenizer(PreTrainedTokenizer):
     def save_vocabulary(self, save_directory: str, filename_prefix: str | None = None):
         return ()
 
-    def to_dict(self):
-        return {}
-
 
 class UTF8Tokenizer(UTFTokenizer):
     encoding = "utf-8"
