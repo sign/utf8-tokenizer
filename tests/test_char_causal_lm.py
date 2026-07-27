@@ -2,7 +2,7 @@
 
 import pytest
 import torch
-from transformers import GenerationConfig
+from transformers import AutoModelForCausalLM, GenerationConfig, LlamaConfig
 
 from utf8_tokenizer import UTF16Tokenizer, UTF32Tokenizer
 from utf8_tokenizer.char_causal_lm import CharacterCausalLMConfig, CharacterCausalLMWrapper
@@ -282,6 +282,53 @@ class TestTruncateGeneratedAtEosWithMinNewTokens:
             generated, eos_token_id=self.EOS, min_new_tokens=1
         )
         assert result[0].tolist() == [99, 88]
+
+
+@pytest.fixture
+def tiny_wrapper():
+    """Wrapper around a tiny locally built model, so no checkpoint is downloaded."""
+    base_model = AutoModelForCausalLM.from_config(
+        LlamaConfig(
+            hidden_size=64,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            intermediate_size=128,
+            vocab_size=256,
+            max_position_embeddings=64,
+        )
+    )
+    config = CharacterCausalLMConfig(num_bytes=2, load_base_config=False)
+    return CharacterCausalLMWrapper(config=config, model=base_model)
+
+
+class TestGradientCheckpointing:
+    """Gradient checkpointing toggles must reach the wrapped model, not just the wrapper."""
+
+    def test_enable_reaches_wrapped_model(self, tiny_wrapper):
+        assert not tiny_wrapper.model.is_gradient_checkpointing
+        tiny_wrapper.gradient_checkpointing_enable()
+        assert tiny_wrapper.model.is_gradient_checkpointing
+
+    def test_disable_reaches_wrapped_model(self, tiny_wrapper):
+        tiny_wrapper.gradient_checkpointing_enable()
+        tiny_wrapper.gradient_checkpointing_disable()
+        assert not tiny_wrapper.model.is_gradient_checkpointing
+
+    def test_enable_forwards_kwargs(self, tiny_wrapper):
+        tiny_wrapper.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        assert tiny_wrapper.model.is_gradient_checkpointing
+
+    def test_backward_still_produces_gradients(self, tiny_wrapper):
+        """Checkpointing recomputes activations, so guard that backward still works end to end."""
+        tiny_wrapper.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        tiny_wrapper.train()
+
+        input_ids = torch.randint(1, 256, (2, 8))
+        loss = tiny_wrapper(input_ids=input_ids, labels=input_ids).loss
+        loss.backward()
+
+        assert loss.requires_grad
+        assert tiny_wrapper.char_embedding.embedding.bit_proj_w.grad is not None
 
 
 @pytest.mark.slow
