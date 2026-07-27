@@ -43,9 +43,8 @@ class CharacterEmbedding(nn.Module):
         self.embedding_size = embedding_size
         self.num_bytes = num_bytes
         self.byte_dim = embedding_size // num_bytes
-        self.num_embeddings = 256
 
-        self.embedding = nn.Embedding(self.num_embeddings, self.byte_dim)
+        self.embedding = nn.Embedding(256, self.byte_dim)
 
         with torch.no_grad():
             # Initialize embedding weights with normalized rows for roundtrip

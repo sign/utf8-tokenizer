@@ -53,8 +53,6 @@ class UTFTokenizer(PreTrainedTokenizer):
     Exposes a `.torch` method for optimized tensor creation.
     """
 
-    __slots__ = ('_struct_format', '_bytes_per_unit', '_eos_encoded')
-
     encoding: str = "utf-8"
     dtype: torch.dtype = torch.uint8
 
@@ -146,6 +144,8 @@ class UTFTokenizer(PreTrainedTokenizer):
     def _encode_and_truncate(
         self, texts: list[TextInput], max_length: int, add_special_tokens: bool
     ) -> list[bytes]:
+        # Kept separate from _encode, and hoisting these lookups out of the comprehensions,
+        # because this is the hot tokenization path
         encoding, bytes_per_unit, eos_encoded = self.encoding, self._bytes_per_unit, self._eos_encoded
         # Convert from token count to byte count for slicing
         max_length *= bytes_per_unit
