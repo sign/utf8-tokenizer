@@ -8,6 +8,19 @@ form valid UTF-8 byte sequences by masking out invalid continuations.
 import torch
 from transformers import LogitsProcessor
 
+# Allowed byte range [low, high) for each continuation position of a multi-byte sequence,
+# keyed by the range of sequence start bytes it applies to.
+CONTINUATION_RULES = [
+    (range(0xC2, 0xE0), [(0x80, 0xC0)]),
+    (range(0xE0, 0xE1), [(0xA0, 0xC0), (0x80, 0xC0)]),  # E0: no overlong encoding
+    (range(0xE1, 0xED), [(0x80, 0xC0), (0x80, 0xC0)]),
+    (range(0xED, 0xEE), [(0x80, 0xA0), (0x80, 0xC0)]),  # ED: no surrogates
+    (range(0xEE, 0xF0), [(0x80, 0xC0), (0x80, 0xC0)]),
+    (range(0xF0, 0xF1), [(0x90, 0xC0), (0x80, 0xC0), (0x80, 0xC0)]),  # F0: no overlong encoding
+    (range(0xF1, 0xF4), [(0x80, 0xC0), (0x80, 0xC0), (0x80, 0xC0)]),
+    (range(0xF4, 0xF5), [(0x80, 0x90), (0x80, 0xC0), (0x80, 0xC0)]),  # F4: max is U+10FFFF
+]
+
 
 class UTF8ValidationLogitsProcessor(LogitsProcessor):
     """
@@ -56,42 +69,30 @@ class UTF8ValidationLogitsProcessor(LogitsProcessor):
     def __init__(self):
         """Initialize the UTF-8 validation logits processor."""
         super().__init__()
-        self._build_masks()
         self._device_cache = {}
 
-    def _build_masks(self):
-        """Build validation masks once at initialization."""
-        # Valid start bytes mask
-        self.mask_start = torch.zeros(256, dtype=torch.bool)
-        self.mask_start[0x00:0x80] = True  # ASCII
-        self.mask_start[0xC2:0xE0] = True  # 2-byte start
-        self.mask_start[0xE0:0xF0] = True  # 3-byte start
-        self.mask_start[0xF0:0xF5] = True  # 4-byte start
+    def _build_masks(self, device: torch.device | None = None) -> dict:
+        """Build validation masks for one device."""
+        start = torch.zeros(256, dtype=torch.bool, device=device)
+        start[0x00:0x80] = True  # ASCII
+        start[0xC2:0xF5] = True  # 2-, 3- and 4-byte sequence starts
 
-        # Continuation byte masks for special cases
-        self.mask_80_bf = self._range_mask(0x80, 0xC0)  # Standard continuation
-        self.mask_a0_bf = self._range_mask(0xA0, 0xC0)  # E0 second byte
-        self.mask_80_9f = self._range_mask(0x80, 0xA0)  # ED second byte
-        self.mask_90_bf = self._range_mask(0x90, 0xC0)  # F0 second byte
-        self.mask_80_8f = self._range_mask(0x80, 0x90)  # F4 second byte
+        # [start_byte][position] -> allowed next bytes. Positions a sequence never reaches keep
+        # the start mask, since the byte after a complete sequence starts a new one.
+        continuation = [[start] * 4 for _ in range(256)]
+        for start_bytes, ranges in CONTINUATION_RULES:
+            for position, (low, high) in enumerate(ranges, start=1):
+                mask = torch.zeros(256, dtype=torch.bool, device=device)
+                mask[low:high] = True
+                for start_byte in start_bytes:
+                    continuation[start_byte][position] = mask
 
-    def _range_mask(self, start: int, end: int) -> torch.Tensor:
-        """Create a boolean mask where True indicates bytes in [start, end)."""
-        mask = torch.zeros(256, dtype=torch.bool)
-        mask[start:end] = True
-        return mask
+        return {'start': start, 'continuation': continuation}
 
     def _get_device_masks(self, device: torch.device) -> dict:
         """Get validation masks on the specified device with caching."""
         if device not in self._device_cache:
-            self._device_cache[device] = {
-                'start': self.mask_start.to(device),
-                '80_bf': self.mask_80_bf.to(device),
-                'a0_bf': self.mask_a0_bf.to(device),
-                '80_9f': self.mask_80_9f.to(device),
-                '90_bf': self.mask_90_bf.to(device),
-                '80_8f': self.mask_80_8f.to(device),
-            }
+            self._device_cache[device] = self._build_masks(device)
         return self._device_cache[device]
 
     def __call__(
@@ -207,43 +208,7 @@ class UTF8ValidationLogitsProcessor(LogitsProcessor):
         Returns:
             Boolean tensor indicating which bytes are valid
         """
-        first_byte = state['first_byte']
-        position = state['position']
-
-        # 2-byte sequences (C2-DF)
-        if 0xC2 <= first_byte < 0xE0:
-            return masks['80_bf'] if position == 1 else masks['start']
-
-        # 3-byte sequences (E0-EF)
-        if 0xE0 <= first_byte < 0xF0:
-            if first_byte == 0xE0:
-                # E0: second byte must be A0-BF (prevent overlong encoding)
-                return masks['a0_bf'] if position == 1 else masks['80_bf']
-            elif first_byte == 0xED:
-                # ED: second byte must be 80-9F (prevent surrogates)
-                return masks['80_9f'] if position == 1 else masks['80_bf']
-            else:
-                # E1-EC, EE-EF: standard continuation
-                return masks['80_bf'] if position in (1, 2) else masks['start']
-
-        # 4-byte sequences (F0-F4)
-        if 0xF0 <= first_byte < 0xF5:
-            if first_byte == 0xF0:
-                # F0: second byte must be 90-BF (prevent overlong encoding)
-                if position == 1:
-                    return masks['90_bf']
-                return masks['80_bf'] if position in (2, 3) else masks['start']
-            elif first_byte == 0xF4:
-                # F4: second byte must be 80-8F (max valid Unicode)
-                if position == 1:
-                    return masks['80_8f']
-                return masks['80_bf'] if position in (2, 3) else masks['start']
-            else:
-                # F1-F3: standard continuation
-                return masks['80_bf'] if position in (1, 2, 3) else masks['start']
-
-        # Fallback (should not reach here)
-        return masks['start']
+        return masks['continuation'][state['first_byte']][state['position']]
 
     # Backward compatibility methods for existing tests
     def _get_utf8_state(self, byte_list: list) -> dict:
