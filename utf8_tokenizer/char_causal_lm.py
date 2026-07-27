@@ -249,9 +249,10 @@ class CharacterCausalLMWrapper(PreTrainedModel):
 
     @staticmethod
     def _get_generation_params(generation_config: GenerationConfig | None) -> tuple[int, int]:
-        """Extract max_new_tokens and min_new_tokens from generation config."""
-        if generation_config is None:
-            generation_config = GenerationConfig()
+        """Extract max_new_tokens and min_new_tokens from generation config.
+
+        A missing config behaves like a default one: getattr falls back to None either way.
+        """
         max_new_tokens = getattr(generation_config, 'max_new_tokens', None) or 50
         min_new_tokens = getattr(generation_config, 'min_new_tokens', None) or 0
         return max_new_tokens, min_new_tokens
