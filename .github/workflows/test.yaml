@@ -10,12 +10,14 @@ on:
 
 jobs:
   test:
-    name: Test (transformers ${{ matrix.transformers }})
+    name: Test (transformers ${{ matrix.transformers }}, ${{ matrix.extras }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         transformers: ["<5", ">=5"]
+        # "dev" exercises the pure-numpy padding path, "dev,fast" the numba one
+        extras: ["dev", "dev,fast"]
 
     steps:
       - uses: actions/checkout@v6
@@ -28,7 +30,7 @@ jobs:
           activate-environment: true
 
       - name: Install dependencies
-        run: uv pip install ".[dev]" "transformers${{ matrix.transformers }}"
+        run: uv pip install ".[${{ matrix.extras }}]" "transformers${{ matrix.transformers }}"
 
       - name: Test Code
         run: uv run pytest -n auto --dist loadscope
