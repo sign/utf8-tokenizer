@@ -94,14 +94,6 @@ class CharacterCausalLMWrapper(PreTrainedModel):
         # We resize so that we can access logits
         self.model.resize_token_embeddings(hidden_size)
 
-    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
-        """Enable gradient checkpointing on the underlying model."""
-        self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
-
-    def gradient_checkpointing_disable(self):
-        """Disable gradient checkpointing on the underlying model."""
-        self.model.gradient_checkpointing_disable()
-
     def get_input_embeddings(self):
         """Return the input embedding layer."""
         return self.char_embedding
