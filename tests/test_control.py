@@ -43,11 +43,11 @@ if __name__ == "__main__":
 
 
 def test_control_tokens_pattern_matches_non_whitespace_controls():
-    """CONTROl_TOKENS_PATTERN is public API: words-segmentation builds its regexes from it."""
+    """CONTROL_TOKENS_PATTERN is public API: words-segmentation builds its regexes from it."""
     import re
 
-    from utf8_tokenizer.control import CONTROl_TOKENS_PATTERN
+    from utf8_tokenizer.control import CONTROL_TOKENS_PATTERN
 
-    pattern = re.compile(f"[{CONTROl_TOKENS_PATTERN}]")
+    pattern = re.compile(f"[{CONTROL_TOKENS_PATTERN}]")
     assert [c for c in map(chr, range(128)) if pattern.fullmatch(c)] == \
         [*map(chr, range(0x01, 0x09)), *map(chr, range(0x0E, 0x20)), "\x7f"]
