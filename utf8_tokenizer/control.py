@@ -37,7 +37,8 @@ class ControlTokens:
 
 
 # Public: a regex character range of the non-whitespace control tokens (used by words-segmentation)
-CONTROl_TOKENS_PATTERN = "\x01-\x08\x0e-\x1f\x7f"
+CONTROL_TOKENS_PATTERN = "\x01-\x08\x0e-\x1f\x7f"
+CONTROl_TOKENS_PATTERN = CONTROL_TOKENS_PATTERN  # Its former (misspelled) name, for words-segmentation <= 0.0.6
 
 CONTROL_WHITESPACES = {
     ControlTokens.HorizontalTab,
