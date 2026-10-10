@@ -4,6 +4,7 @@ import torch.nn as nn
 from transformers import BertForMaskedLM
 
 from utf8_tokenizer.byte_embeddings import (
+    BitEmbedding,
     PatchedBitEmbeddings,
     join_embedding_layers,
     patch_embedding_layers,
@@ -224,3 +225,21 @@ class TestEmbeddings:
         # Verify output shape and validity
         assert output.shape == (2, 16, patched_embeddings.embeddings.embedding_dim)
         assert torch.isfinite(output).all()
+
+
+def test_bit_embedding_starts_as_its_table_and_learns_bits():
+    weight = torch.randn(256, 4)
+    embedding = BitEmbedding(weight)
+    ids = torch.tensor([[0, 1, 255]])
+    assert torch.equal(embedding(ids), weight[ids])  # The bit projection starts at zero
+
+    embedding(ids).sum().backward()
+    assert embedding.weight.grad is not None
+    assert embedding.bit_proj.grad.abs().sum() > 0
+
+    with torch.no_grad():
+        embedding.bit_proj.fill_(1.0)
+    # Byte 255 has all 8 bits set, byte 0 none
+    assert torch.allclose(embedding.folded_weight()[255], weight[255] + 8)
+    assert torch.allclose(embedding.folded_weight()[0], weight[0])
+    assert torch.allclose(embedding(ids)[0, 2], embedding.folded_weight()[255])

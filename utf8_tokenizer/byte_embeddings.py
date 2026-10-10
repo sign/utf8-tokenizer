@@ -144,6 +144,28 @@ class PatchedBitEmbeddings(nn.Module):
         # Façade already refreshed by pre-hook; forward is just a normal embedding lookup
         return torch.nn.functional.embedding(input_ids, self.weight)
 
+class BitEmbedding(nn.Module):
+    """
+    The bit-bias embedding of PatchedBitEmbeddings as a plain module: a byte embedding table plus an additive
+    (zero-initialized) projection of each byte's 8 bits, W = base + bits(256,8) @ bit_proj.T(8,D).
+    Without a tieable façade or hooks: for models that own their embeddings (e.g. Megatron) and torch.compile.
+    folded_weight() is the equivalent plain embedding table, e.g. to export.
+    """
+
+    def __init__(self, weight: torch.Tensor):
+        super().__init__()
+        assert weight.shape[0] == 256, "Expected a byte-level embedding table (256 rows)."
+        self.weight = nn.Parameter(weight.detach().clone())
+        self.bit_proj = nn.Parameter(torch.zeros(weight.shape[1], 8, dtype=weight.dtype))
+        self.register_buffer("bits", unpack_bits(torch.arange(256, dtype=torch.uint8)), persistent=False)
+
+    def folded_weight(self) -> torch.Tensor:
+        return self.weight + self.bits.to(self.weight.dtype) @ self.bit_proj.T.to(self.weight.dtype)
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.embedding(input_ids, self.folded_weight())
+
+
 def tie_embeddings(model):
     try:
         # HuggingFace Transformers <=v4
